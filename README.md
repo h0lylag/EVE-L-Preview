@@ -37,6 +37,14 @@ Example:
 WIDTH=320 HEIGHT=180 BORDER_COLOR=0xFF00FF00 HIDE_WHEN_NO_FOCUS=true eve-l-preview
 ```
 
+You can also set the log level for debugging:
+
+```bash
+LOG_LEVEL=debug eve-l-preview
+```
+
+Valid log levels: `trace`, `debug`, `info` (default), `warn`, `error`
+
 ## Installation
 
 ### Binary

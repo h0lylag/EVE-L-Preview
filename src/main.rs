@@ -111,8 +111,21 @@ fn get_eves<'a>(
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Parse log level from environment variable
+    let log_level = match std::env::var("LOG_LEVEL")
+        .unwrap_or_else(|_| "info".to_string())
+        .to_lowercase()
+        .as_str()
+    {
+        "trace" => TraceLevel::TRACE,
+        "debug" => TraceLevel::DEBUG,
+        "warn" => TraceLevel::WARN,
+        "error" => TraceLevel::ERROR,
+        _ => TraceLevel::INFO,
+    };
+    
     let subscriber = FmtSubscriber::builder()
-        .with_max_level(TraceLevel::INFO)
+        .with_max_level(log_level)
         .finish();
 
     tracing::subscriber::set_global_default(subscriber)?;
