@@ -92,15 +92,19 @@ pub fn handle_event<'a>(
                 let geom = conn.get_geometry(thumbnail.window)?.reply()?;
                 thumbnail.input_state.drag_start = (event.root_x, event.root_y);
                 thumbnail.input_state.win_start = (geom.x, geom.y);
-                thumbnail.input_state.dragging = true;
+                // Only allow dragging with right-click (button 3)
+                if event.detail == 3 {
+                    thumbnail.input_state.dragging = true;
+                }
             }
         }
         Event::ButtonRelease(event) => {
             if let Some((_, thumbnail)) = eves
                 .iter_mut()
-                .find(|(_, thumb)| thumb.is_hovered(event.root_x, event.root_y) && thumb.input_state.dragging)
+                .find(|(_, thumb)| thumb.is_hovered(event.root_x, event.root_y))
             {
-                if event.detail == 1 //
+                // Left-click focuses the window (only if it wasn't dragged)
+                if event.detail == 1
                     && thumbnail.input_state.drag_start == (event.root_x, event.root_y)
                 {
                     thumbnail.focus()?;
