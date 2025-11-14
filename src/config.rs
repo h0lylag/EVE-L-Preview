@@ -269,3 +269,233 @@ impl PersistentState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_display_config_valid_colors() {
+        let state = PersistentState {
+            width: 320,
+            height: 180,
+            opacity_percent: 75,
+            border_size: 3,
+            border_color_hex: "#FF00FF00".to_string(), // Green
+            text_x: 15,
+            text_y: 25,
+            text_foreground_hex: "#FFFFFFFF".to_string(), // White
+            text_background_hex: "#80000000".to_string(), // 50% transparent black
+            hide_when_no_focus: true,
+            character_positions: HashMap::new(),
+            snap_threshold: 20,
+        };
+
+        let config = state.build_display_config();
+        assert_eq!(config.width, 320);
+        assert_eq!(config.height, 180);
+        assert_eq!(config.border_size, 3);
+        assert_eq!(config.text_x, 15);
+        assert_eq!(config.text_y, 25);
+        assert_eq!(config.hide_when_no_focus, true);
+        
+        // Opacity: 75% → 0xBF
+        assert_eq!(config.opacity, 0xBF000000);
+        
+        // Border color: #FF00FF00 → Color { red: 0, green: 65535, blue: 0, alpha: 65535 }
+        assert_eq!(config.border_color.red, 0);
+        assert_eq!(config.border_color.green, 65535);
+        assert_eq!(config.border_color.blue, 0);
+        assert_eq!(config.border_color.alpha, 65535);
+    }
+
+    #[test]
+    fn test_build_display_config_invalid_colors_fallback() {
+        let state = PersistentState {
+            width: 200,
+            height: 100,
+            opacity_percent: 100,
+            border_size: 5,
+            border_color_hex: "invalid".to_string(),
+            text_x: 10,
+            text_y: 20,
+            text_foreground_hex: "also_invalid".to_string(),
+            text_background_hex: "nope".to_string(),
+            hide_when_no_focus: false,
+            character_positions: HashMap::new(),
+            snap_threshold: 15,
+        };
+
+        let config = state.build_display_config();
+        
+        // Should fall back to default colors without panicking
+        assert_eq!(config.width, 200);
+        assert_eq!(config.height, 100);
+        
+        // Opacity: 100% → 0xFF
+        assert_eq!(config.opacity, 0xFF000000);
+        
+        // Default border_color: 0x7FFF0000 (red with 50% alpha)
+        // Alpha conversion: 0x7F (127) * 257 = 32639 in 16-bit
+        assert_eq!(config.border_color.red, 65535);
+        assert_eq!(config.border_color.blue, 0);
+        assert_eq!(config.border_color.alpha, 32639); // 0x7F → 32639 (not 32767)
+    }
+
+    #[test]
+    fn test_update_position_with_character_name() {
+        let mut state = PersistentState {
+            width: 240,
+            height: 135,
+            opacity_percent: 75,
+            border_size: 5,
+            border_color_hex: "#7FFF0000".to_string(),
+            text_x: 10,
+            text_y: 20,
+            text_foreground_hex: "#FFFFFFFF".to_string(),
+            text_background_hex: "#7F000000".to_string(),
+            hide_when_no_focus: false,
+            character_positions: HashMap::new(),
+            snap_threshold: 15,
+        };
+
+        // This will try to save(), but we can't control file I/O in test
+        // Just verify the HashMap update happens
+        let _ = state.update_position("TestChar", 100, 200);
+        
+        assert_eq!(state.character_positions.get("TestChar"), Some(&Position::new(100, 200)));
+    }
+
+    #[test]
+    fn test_update_position_empty_name_ignored() {
+        let mut state = PersistentState {
+            width: 240,
+            height: 135,
+            opacity_percent: 75,
+            border_size: 5,
+            border_color_hex: "#7FFF0000".to_string(),
+            text_x: 10,
+            text_y: 20,
+            text_foreground_hex: "#FFFFFFFF".to_string(),
+            text_background_hex: "#7F000000".to_string(),
+            hide_when_no_focus: false,
+            character_positions: HashMap::new(),
+            snap_threshold: 15,
+        };
+
+        let _ = state.update_position("", 300, 400);
+        
+        // Empty name should not be inserted
+        assert!(state.character_positions.is_empty());
+    }
+
+    #[test]
+    fn test_handle_character_change_both_names() {
+        let mut state = PersistentState {
+            width: 240,
+            height: 135,
+            opacity_percent: 75,
+            border_size: 5,
+            border_color_hex: "#7FFF0000".to_string(),
+            text_x: 10,
+            text_y: 20,
+            text_foreground_hex: "#FFFFFFFF".to_string(),
+            text_background_hex: "#7F000000".to_string(),
+            hide_when_no_focus: false,
+            character_positions: HashMap::from([("NewChar".to_string(), Position::new(500, 600))]),
+            snap_threshold: 15,
+        };
+
+        let current_pos = Position::new(100, 200);
+        // This will fail to save (file I/O in test), but we check the logic
+        let result = state.handle_character_change("OldChar", "NewChar", current_pos);
+        
+        // Should save old position (even if disk save fails)
+        assert_eq!(state.character_positions.get("OldChar"), Some(&Position::new(100, 200)));
+        
+        // File save will fail in test, so we just verify the position was looked up
+        // The function returns Err because save() fails, not because logic is wrong
+        assert!(result.is_err());
+        
+        // Verify the new position exists in the map (function would return it if save succeeded)
+        assert_eq!(state.character_positions.get("NewChar"), Some(&Position::new(500, 600)));
+    }
+
+    #[test]
+    fn test_handle_character_change_logout() {
+        let mut state = PersistentState {
+            width: 240,
+            height: 135,
+            opacity_percent: 75,
+            border_size: 5,
+            border_color_hex: "#7FFF0000".to_string(),
+            text_x: 10,
+            text_y: 20,
+            text_foreground_hex: "#FFFFFFFF".to_string(),
+            text_background_hex: "#7F000000".to_string(),
+            hide_when_no_focus: false,
+            character_positions: HashMap::new(),
+            snap_threshold: 15,
+        };
+
+        let current_pos = Position::new(300, 400);
+        let result = state.handle_character_change("LoggingOut", "", current_pos);
+        
+        // Should save old position (even if disk save fails)
+        assert_eq!(state.character_positions.get("LoggingOut"), Some(&Position::new(300, 400)));
+        
+        // File save will fail in test environment
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_handle_character_change_new_character_no_saved_position() {
+        let mut state = PersistentState {
+            width: 240,
+            height: 135,
+            opacity_percent: 75,
+            border_size: 5,
+            border_color_hex: "#7FFF0000".to_string(),
+            text_x: 10,
+            text_y: 20,
+            text_foreground_hex: "#FFFFFFFF".to_string(),
+            text_background_hex: "#7F000000".to_string(),
+            hide_when_no_focus: false,
+            character_positions: HashMap::new(),
+            snap_threshold: 15,
+        };
+
+        let current_pos = Position::new(700, 800);
+        let result = state.handle_character_change("", "BrandNewChar", current_pos);
+        
+        // Empty old name not saved
+        assert!(state.character_positions.is_empty());
+        
+        // File save will fail in test environment
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_opacity_percent_roundtrip() {
+        // Test that opacity_percent converts correctly through Opacity type
+        let state = PersistentState {
+            width: 240,
+            height: 135,
+            opacity_percent: 50,
+            border_size: 5,
+            border_color_hex: "#7FFF0000".to_string(),
+            text_x: 10,
+            text_y: 20,
+            text_foreground_hex: "#FFFFFFFF".to_string(),
+            text_background_hex: "#7F000000".to_string(),
+            hide_when_no_focus: false,
+            character_positions: HashMap::new(),
+            snap_threshold: 15,
+        };
+
+        let config = state.build_display_config();
+        
+        // 50% → 0x7F or 0x80 (due to rounding)
+        assert!(config.opacity >= 0x7F000000 && config.opacity <= 0x80000000);
+    }
+}

@@ -102,3 +102,109 @@ fn check_snap(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_snap_disabled_when_threshold_zero() {
+        let dragged = Rect { x: 100, y: 100, width: 50, height: 50 };
+        let other = Rect { x: 155, y: 100, width: 50, height: 50 };
+        let result = find_snap_position(dragged, &[(0, other)], 0);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_snap_left_edge_to_right_edge() {
+        let dragged = Rect { x: 100, y: 100, width: 50, height: 50 };
+        let other = Rect { x: 160, y: 100, width: 50, height: 50 };
+        // Dragged right edge at 150, other left at 160 - distance 10, within threshold 15
+        let result = find_snap_position(dragged, &[(0, other)], 15);
+        assert_eq!(result, Some(Position::new(110, 100))); // Snapped: dragged.x moves by 10
+    }
+
+    #[test]
+    fn test_snap_right_edge_to_left_edge() {
+        let dragged = Rect { x: 100, y: 100, width: 50, height: 50 };
+        let other = Rect { x: 40, y: 100, width: 50, height: 50 };
+        // Dragged left edge at 100, other right at 90 - distance 10
+        let result = find_snap_position(dragged, &[(0, other)], 15);
+        assert_eq!(result, Some(Position::new(90, 100))); // Snapped: dragged.x moves to 90
+    }
+
+    #[test]
+    fn test_align_left_edges() {
+        let dragged = Rect { x: 105, y: 100, width: 50, height: 50 };
+        let other = Rect { x: 100, y: 200, width: 50, height: 50 };
+        let result = find_snap_position(dragged, &[(0, other)], 15);
+        assert_eq!(result, Some(Position::new(100, 100))); // X aligned to 100
+    }
+
+    #[test]
+    fn test_align_right_edges() {
+        let dragged = Rect { x: 100, y: 100, width: 50, height: 50 };
+        let other = Rect { x: 95, y: 200, width: 50, height: 50 };
+        // Dragged right: 150, other right: 145, distance 5
+        let result = find_snap_position(dragged, &[(0, other)], 15);
+        assert_eq!(result, Some(Position::new(95, 100))); // X moves by -5
+    }
+
+    #[test]
+    fn test_snap_top_edge_to_bottom_edge() {
+        let dragged = Rect { x: 100, y: 100, width: 50, height: 50 };
+        let other = Rect { x: 100, y: 160, width: 50, height: 50 };
+        let result = find_snap_position(dragged, &[(0, other)], 15);
+        assert_eq!(result, Some(Position::new(100, 110))); // Y snapped
+    }
+
+    #[test]
+    fn test_snap_bottom_edge_to_top_edge() {
+        let dragged = Rect { x: 100, y: 100, width: 50, height: 50 };
+        let other = Rect { x: 100, y: 40, width: 50, height: 50 };
+        let result = find_snap_position(dragged, &[(0, other)], 15);
+        assert_eq!(result, Some(Position::new(100, 90))); // Y snapped
+    }
+
+    #[test]
+    fn test_align_top_edges() {
+        let dragged = Rect { x: 100, y: 105, width: 50, height: 50 };
+        let other = Rect { x: 200, y: 100, width: 50, height: 50 };
+        let result = find_snap_position(dragged, &[(0, other)], 15);
+        assert_eq!(result, Some(Position::new(100, 100))); // Y aligned
+    }
+
+    #[test]
+    fn test_both_axes_snap() {
+        let dragged = Rect { x: 105, y: 105, width: 50, height: 50 };
+        let other = Rect { x: 100, y: 100, width: 50, height: 50 };
+        let result = find_snap_position(dragged, &[(0, other)], 15);
+        assert_eq!(result, Some(Position::new(100, 100))); // Both X and Y snap
+    }
+
+    #[test]
+    fn test_no_snap_when_too_far() {
+        let dragged = Rect { x: 100, y: 100, width: 50, height: 50 };
+        let other = Rect { x: 200, y: 200, width: 50, height: 50 };
+        let result = find_snap_position(dragged, &[(0, other)], 15);
+        assert_eq!(result, None); // Too far to snap
+    }
+
+    #[test]
+    fn test_chooses_closest_snap_target() {
+        let dragged = Rect { x: 100, y: 100, width: 50, height: 50 };
+        let close = Rect { x: 155, y: 100, width: 50, height: 50 }; // 5 pixels away
+        let far = Rect { x: 165, y: 100, width: 50, height: 50 };   // 15 pixels away
+        let result = find_snap_position(dragged, &[(0, close), (1, far)], 20);
+        assert_eq!(result, Some(Position::new(105, 100))); // Snaps to closer one
+    }
+
+    #[test]
+    fn test_multiple_windows_independent_axes() {
+        let dragged = Rect { x: 105, y: 205, width: 50, height: 50 };
+        let snap_x = Rect { x: 100, y: 500, width: 50, height: 50 }; // X alignment
+        let snap_y = Rect { x: 500, y: 200, width: 50, height: 50 }; // Y alignment
+        let result = find_snap_position(dragged, &[(0, snap_x), (1, snap_y)], 15);
+        assert_eq!(result, Some(Position::new(100, 200))); // X from first, Y from second
+    }
+}

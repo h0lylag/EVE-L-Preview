@@ -77,3 +77,117 @@ impl SavedState {
         info!("Saved session position for window {}: ({}, {})", window, x, y);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_position_character_from_config() {
+        let state = SavedState::new();
+        let mut char_positions = HashMap::new();
+        char_positions.insert("Alice".to_string(), Position::new(100, 200));
+        
+        let pos = state.get_position("Alice", 123, &char_positions);
+        assert_eq!(pos, Some(Position::new(100, 200)));
+    }
+
+    #[test]
+    fn test_get_position_new_character_no_inherit() {
+        let state = SavedState {
+            window_positions: HashMap::from([(456, Position::new(300, 400))]),
+            inherit_window_position: false,
+        };
+        let char_positions = HashMap::new();
+        
+        // New character "Bob" with window 456 that has position → should return None (center)
+        let pos = state.get_position("Bob", 456, &char_positions);
+        assert_eq!(pos, None);
+    }
+
+    #[test]
+    fn test_get_position_new_character_with_inherit() {
+        let state = SavedState {
+            window_positions: HashMap::from([(789, Position::new(500, 600))]),
+            inherit_window_position: true,
+        };
+        let char_positions = HashMap::new();
+        
+        // New character "Charlie" with inherit enabled → should use window position
+        let pos = state.get_position("Charlie", 789, &char_positions);
+        assert_eq!(pos, Some(Position::new(500, 600)));
+    }
+
+    #[test]
+    fn test_get_position_new_character_inherit_but_no_window_position() {
+        let state = SavedState {
+            window_positions: HashMap::new(),
+            inherit_window_position: true,
+        };
+        let char_positions = HashMap::new();
+        
+        // inherit enabled but window 999 has no saved position → None (center)
+        let pos = state.get_position("Diana", 999, &char_positions);
+        assert_eq!(pos, None);
+    }
+
+    #[test]
+    fn test_get_position_logged_out_window() {
+        let state = SavedState {
+            window_positions: HashMap::from([(111, Position::new(700, 800))]),
+            inherit_window_position: false,
+        };
+        let char_positions = HashMap::new();
+        
+        // Empty character name (logged-out "EVE" window) → use window position
+        let pos = state.get_position("", 111, &char_positions);
+        assert_eq!(pos, Some(Position::new(700, 800)));
+    }
+
+    #[test]
+    fn test_get_position_logged_out_window_no_saved_position() {
+        let state = SavedState::new();
+        let char_positions = HashMap::new();
+        
+        // Logged-out window with no saved position → None (center)
+        let pos = state.get_position("", 222, &char_positions);
+        assert_eq!(pos, None);
+    }
+
+    #[test]
+    fn test_get_position_character_priority_over_window() {
+        let mut state = SavedState::new();
+        state.window_positions.insert(333, Position::new(900, 1000));
+        state.inherit_window_position = true;
+        
+        let mut char_positions = HashMap::new();
+        char_positions.insert("Eve".to_string(), Position::new(1100, 1200));
+        
+        // Character position should take priority even with inherit enabled
+        let pos = state.get_position("Eve", 333, &char_positions);
+        assert_eq!(pos, Some(Position::new(1100, 1200)));
+    }
+
+    #[test]
+    fn test_update_window_position() {
+        let mut state = SavedState::new();
+        
+        state.update_window_position(444, 1300, 1400);
+        assert_eq!(state.window_positions.get(&444), Some(&Position::new(1300, 1400)));
+        
+        // Update existing position
+        state.update_window_position(444, 1500, 1600);
+        assert_eq!(state.window_positions.get(&444), Some(&Position::new(1500, 1600)));
+    }
+
+    #[test]
+    fn test_update_window_position_multiple_windows() {
+        let mut state = SavedState::new();
+        
+        state.update_window_position(555, 100, 200);
+        state.update_window_position(666, 300, 400);
+        
+        assert_eq!(state.window_positions.get(&555), Some(&Position::new(100, 200)));
+        assert_eq!(state.window_positions.get(&666), Some(&Position::new(300, 400)));
+    }
+}
