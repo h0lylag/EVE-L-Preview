@@ -10,23 +10,12 @@ use x11rb::protocol::render::Color;
 use crate::color::{HexColor, Opacity};
 use crate::types::{CharacterSettings, Position};
 
-/// Calculate smart default thumbnail dimensions based on screen size
+/// Default thumbnail dimensions for new characters
 /// Returns (width, height) as a tuple
-fn default_thumbnail_size(screen_width: u16, screen_height: u16) -> (u16, u16) {
-    // Use 7.5% of screen dimensions, maintaining screen aspect ratio
-    // Constrain between 180-480 width for reasonable sizes
-    let width = ((screen_width * 75 / 1000).max(180).min(480) / 10) * 10; // Round to nearest 10
-    
-    // Calculate height based on screen aspect ratio, not fixed 16:9
-    let screen_aspect = screen_width as f32 / screen_height as f32;
-    let height = ((width as f32 / screen_aspect) / 10.0).round() as u16 * 10; // Round to nearest 10
-    
-    info!(
-        "Auto-detected screen size: {}x{}, using thumbnail defaults: {}x{}",
-        screen_width, screen_height, width, height
-    );
-    
-    (width, height)
+fn default_thumbnail_size(_screen_width: u16, _screen_height: u16) -> (u16, u16) {
+    // Fixed default size that works well across different setups
+    // Each character can customize their dimensions independently
+    (250, 141)
 }
 
 /// Immutable display settings (loaded once at startup)
