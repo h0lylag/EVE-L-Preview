@@ -12,7 +12,7 @@ use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as WrapperExt;
 
 use crate::config::DisplayConfig;
-use crate::x11_utils::{get_pictformat, to_fixed};
+use crate::x11_utils::{get_pictformat, to_fixed, AppContext};
 
 #[derive(Debug, Default)]
 pub struct InputState {
@@ -50,35 +50,33 @@ pub struct Thumbnail<'a> {
 
 impl<'a> Thumbnail<'a> {
     pub fn new(
-        conn: &'a RustConnection,
-        screen: &Screen,
+        ctx: &AppContext<'a>,
         character_name: String,
         src: Window,
         font: Font,
-        config: &'a DisplayConfig,
         position: Option<(i16, i16)>,
     ) -> Result<Self> {
-        let src_geom = conn.get_geometry(src)?.reply()?;
+        let src_geom = ctx.conn.get_geometry(src)?.reply()?;
         
         // Use saved position OR center on source window
         let (x, y) = position.unwrap_or_else(|| {
-            let x = src_geom.x + (src_geom.width - config.width) as i16 / 2;
-            let y = src_geom.y + (src_geom.height - config.height) as i16 / 2;
+            let x = src_geom.x + (src_geom.width - ctx.config.width) as i16 / 2;
+            let y = src_geom.y + (src_geom.height - ctx.config.height) as i16 / 2;
             (x, y)
         });
 
-        let window = conn.generate_id()?;
-        conn.create_window(
-            screen.root_depth,
+        let window = ctx.conn.generate_id()?;
+        ctx.conn.create_window(
+            ctx.screen.root_depth,
             window,
-            screen.root,
+            ctx.screen.root,
             x,
             y,
-            config.width,
-            config.height,
+            ctx.config.width,
+            ctx.config.height,
             0,
             WindowClass::INPUT_OUTPUT,
-            screen.root_visual,
+            ctx.screen.root_visual,
             &CreateWindowAux::new()
             .override_redirect(1)
             .event_mask(
@@ -89,20 +87,20 @@ impl<'a> Thumbnail<'a> {
             ),
         )?;
 
-        let opacity_atom = conn
+        let opacity_atom = ctx.conn
         .intern_atom(false, b"_NET_WM_WINDOW_OPACITY")?
         .reply()?
         .atom;
-        conn.change_property32(
+        ctx.conn.change_property32(
             PropMode::REPLACE,
             window,
             opacity_atom,
             AtomEnum::CARDINAL,
-            &[config.opacity],
+            &[ctx.config.opacity],
         )?;
 
-        let wm_class = conn.intern_atom(false, b"WM_CLASS")?.reply()?.atom;
-        conn.change_property8(
+        let wm_class = ctx.conn.intern_atom(false, b"WM_CLASS")?.reply()?.atom;
+        ctx.conn.change_property8(
             PropMode::REPLACE,
             window,
             wm_class,
@@ -110,9 +108,9 @@ impl<'a> Thumbnail<'a> {
             b"eve-l-preview\0eve-l-preview\0",
         )?;
 
-        let net_wm_state = conn.intern_atom(false, b"_NET_WM_STATE")?.reply()?.atom;
-        let above_atom = conn.intern_atom(false, b"_NET_WM_STATE_ABOVE")?.reply()?.atom;
-        conn.change_property32(
+        let net_wm_state = ctx.conn.intern_atom(false, b"_NET_WM_STATE")?.reply()?.atom;
+        let above_atom = ctx.conn.intern_atom(false, b"_NET_WM_STATE_ABOVE")?.reply()?.atom;
+        ctx.conn.change_property32(
             PropMode::REPLACE,
             window,
             net_wm_state,
@@ -120,45 +118,45 @@ impl<'a> Thumbnail<'a> {
             &[above_atom],
         )?;
 
-        conn.map_window(window)?;
+        ctx.conn.map_window(window)?;
 
-        let border_fill = conn.generate_id()?;
-        conn.render_create_solid_fill(border_fill, config.border_color)?;
+        let border_fill = ctx.conn.generate_id()?;
+        ctx.conn.render_create_solid_fill(border_fill, ctx.config.border_color)?;
 
-        let pict_format = get_pictformat(conn, screen.root_depth, false)?;
-        let src_picture = conn.generate_id()?;
-        let dst_picture = conn.generate_id()?;
-        conn.render_create_picture(src_picture, src, pict_format, &CreatePictureAux::new())?;
-        conn.render_create_picture(dst_picture, window, pict_format, &CreatePictureAux::new())?;
+        let pict_format = get_pictformat(ctx.conn, ctx.screen.root_depth, false)?;
+        let src_picture = ctx.conn.generate_id()?;
+        let dst_picture = ctx.conn.generate_id()?;
+        ctx.conn.render_create_picture(src_picture, src, pict_format, &CreatePictureAux::new())?;
+        ctx.conn.render_create_picture(dst_picture, window, pict_format, &CreatePictureAux::new())?;
 
-        let overlay_pixmap = conn.generate_id()?;
-        let overlay_picture = conn.generate_id()?;
-        conn.create_pixmap(32, overlay_pixmap, screen.root, config.width, config.height)?;
-        conn.render_create_picture(
+        let overlay_pixmap = ctx.conn.generate_id()?;
+        let overlay_picture = ctx.conn.generate_id()?;
+        ctx.conn.create_pixmap(32, overlay_pixmap, ctx.screen.root, ctx.config.width, ctx.config.height)?;
+        ctx.conn.render_create_picture(
             overlay_picture,
             overlay_pixmap,
-            get_pictformat(conn, 32, true)?,
+            get_pictformat(ctx.conn, 32, true)?,
             &CreatePictureAux::new(),
         )?;
 
-        let overlay_gc = conn.generate_id()?;
-        conn.create_gc(
+        let overlay_gc = ctx.conn.generate_id()?;
+        ctx.conn.create_gc(
             overlay_gc,
             overlay_pixmap,
             &CreateGCAux::new()
                 .font(font)
-                .foreground(config.text_foreground)
-                .background(config.text_background),
+                .foreground(ctx.config.text_foreground)
+                .background(ctx.config.text_background),
         )?;
 
-        let damage = conn.generate_id()?;
-        conn.damage_create(damage, src, DamageReportLevel::RAW_RECTANGLES)?;
+        let damage = ctx.conn.generate_id()?;
+        ctx.conn.damage_create(damage, src, DamageReportLevel::RAW_RECTANGLES)?;
 
         let mut _self = Self {
             x,
             y,
             window,
-            config,
+            config: ctx.config,
 
             border_fill,
             src_picture,
@@ -173,10 +171,10 @@ impl<'a> Thumbnail<'a> {
             minimized: false,
 
             src,
-            root: screen.root,
+            root: ctx.screen.root,
             damage,
             input_state: InputState::default(),
-            conn,
+            conn: ctx.conn,
         };
         _self.update_name()?;
         Ok(_self)

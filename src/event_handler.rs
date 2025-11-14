@@ -11,18 +11,15 @@ use crate::config::{DisplayConfig, PersistentState};
 use crate::persistence::SavedState;
 use crate::snapping;
 use crate::thumbnail::Thumbnail;
-use crate::x11_utils::{is_window_eve, CachedAtoms};
+use crate::x11_utils::{is_window_eve, AppContext, CachedAtoms};
 
 pub fn handle_event<'a>(
-    conn: &'a RustConnection,
-    screen: &Screen,
-    config: &'a DisplayConfig,
+    ctx: &AppContext<'a>,
     persistent_state: &mut PersistentState,
     eves: &mut HashMap<Window, Thumbnail<'a>>,
     event: Event,
-    atoms: &CachedAtoms,
     session_state: &mut SavedState,
-    check_and_create_window: impl Fn(&'a RustConnection, &Screen, &'a DisplayConfig, &PersistentState, Window, &CachedAtoms, &SavedState) -> Result<Option<Thumbnail<'a>>>,
+    check_and_create_window: impl Fn(&AppContext<'a>, &PersistentState, Window, &SavedState) -> Result<Option<Thumbnail<'a>>>,
 ) -> Result<()> {
     match event {
         DamageNotify(event) => {
@@ -31,12 +28,12 @@ pub fn handle_event<'a>(
                 .find(|thumbnail| thumbnail.damage == event.damage)
             {
                 thumbnail.update()?; // TODO: add fps limiter?
-                conn.damage_subtract(event.damage, 0u32, 0u32)?;
-                conn.flush()?;
+                ctx.conn.damage_subtract(event.damage, 0u32, 0u32)?;
+                ctx.conn.flush()?;
             }
         }
         CreateNotify(event) => {
-            if let Some(thumbnail) = check_and_create_window(conn, screen, config, persistent_state, event.window, atoms, session_state)? {
+            if let Some(thumbnail) = check_and_create_window(ctx, persistent_state, event.window, session_state)? {
                 eves.insert(event.window, thumbnail);
             }
         }
@@ -44,9 +41,9 @@ pub fn handle_event<'a>(
             eves.remove(&event.window);
         }
         PropertyNotify(event) => {
-            if event.atom == atoms.wm_name
+            if event.atom == ctx.atoms.wm_name
                 && let Some(thumbnail) = eves.get_mut(&event.window)
-                && let Some(new_character_name) = is_window_eve(conn, event.window, atoms)?
+                && let Some(new_character_name) = is_window_eve(ctx.conn, event.window, ctx.atoms)?
             {
                 // Character name changed (login/logout/character switch)
                 let old_name = thumbnail.character_name.clone();
@@ -65,17 +62,17 @@ pub fn handle_event<'a>(
                 // Update thumbnail (may move to new position)
                 thumbnail.set_character_name(new_character_name, new_position)?;
                 
-            } else if event.atom == atoms.wm_name
-                && let Some(thumbnail) = check_and_create_window(conn, screen, config, persistent_state, event.window, atoms, session_state)?
+            } else if event.atom == ctx.atoms.wm_name
+                && let Some(thumbnail) = check_and_create_window(ctx, persistent_state, event.window, session_state)?
             {
                 eves.insert(event.window, thumbnail);
-            } else if event.atom == atoms.net_wm_state
+            } else if event.atom == ctx.atoms.net_wm_state
                 && let Some(thumbnail) = eves.get_mut(&event.window)
-                && let Some(state) = conn
+                && let Some(state) = ctx.conn
                     .get_property(false, event.window, event.atom, AtomEnum::ATOM, 0, 1024)?
                     .reply()?
                     .value32()
-                && state.collect::<Vec<_>>().contains(&atoms.net_wm_state_hidden)
+                && state.collect::<Vec<_>>().contains(&ctx.atoms.net_wm_state_hidden)
             {
                 thumbnail.minimized()?;
             }
@@ -85,7 +82,7 @@ pub fn handle_event<'a>(
                 thumbnail.minimized = false;
                 thumbnail.focused = true;
                 thumbnail.border(true)?;
-                if config.hide_when_no_focus && eves.values().any(|x| !x.visible) {
+                if ctx.config.hide_when_no_focus && eves.values().any(|x| !x.visible) {
                     for thumbnail in eves.values_mut() {
                         thumbnail.visibility(true)?;
                     }
@@ -96,7 +93,7 @@ pub fn handle_event<'a>(
             if let Some(thumbnail) = eves.get_mut(&event.event) {
                 thumbnail.focused = false;
                 thumbnail.border(false)?;
-                if config.hide_when_no_focus && eves.values().all(|x| !x.focused && !x.minimized) {
+                if ctx.config.hide_when_no_focus && eves.values().all(|x| !x.focused && !x.minimized) {
                     for thumbnail in eves.values_mut() {
                         thumbnail.visibility(false)?;
                     }
@@ -108,7 +105,7 @@ pub fn handle_event<'a>(
                 .iter_mut()
                 .find(|(_, thumb)| thumb.is_hovered(event.root_x, event.root_y) && thumb.visible)
             {
-                let geom = conn.get_geometry(thumbnail.window)?.reply()?;
+                let geom = ctx.conn.get_geometry(thumbnail.window)?.reply()?;
                 thumbnail.input_state.drag_start = (event.root_x, event.root_y);
                 thumbnail.input_state.win_start = (geom.x, geom.y);
                 // Only allow dragging with right-click (button 3)
@@ -163,8 +160,8 @@ pub fn handle_event<'a>(
                 let dragged_rect = snapping::Rect {
                     x: new_x,
                     y: new_y,
-                    width: config.width,
-                    height: config.height,
+                    width: ctx.config.width,
+                    height: ctx.config.height,
                 };
                 
                 // Build list of other thumbnails for snapping
@@ -174,8 +171,8 @@ pub fn handle_event<'a>(
                     .map(|(win, t)| (*win, snapping::Rect {
                         x: t.x,
                         y: t.y,
-                        width: config.width,
-                        height: config.height,
+                        width: ctx.config.width,
+                        height: ctx.config.height,
                     }))
                     .collect();
                 

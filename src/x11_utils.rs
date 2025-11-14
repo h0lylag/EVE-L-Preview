@@ -5,6 +5,16 @@ use x11rb::protocol::xproto::*;
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as WrapperExt;
 
+use crate::config::DisplayConfig;
+
+/// Application context holding immutable shared state
+pub struct AppContext<'a> {
+    pub conn: &'a RustConnection,
+    pub screen: &'a Screen,
+    pub config: &'a DisplayConfig,
+    pub atoms: &'a CachedAtoms,
+}
+
 /// Pre-cached X11 atoms to avoid repeated roundtrips
 pub struct CachedAtoms {
     pub wm_name: Atom,
