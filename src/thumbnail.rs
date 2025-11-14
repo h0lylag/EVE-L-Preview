@@ -1,5 +1,4 @@
 use anyhow::Result;
-use std::cell::RefCell;
 use tracing::info;
 use x11rb::connection::Connection;
 use x11rb::protocol::damage::{
@@ -12,7 +11,7 @@ use x11rb::protocol::xproto::*;
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as WrapperExt;
 
-use crate::config::Config;
+use crate::config::DisplayConfig;
 use crate::x11_utils::{get_pictformat, to_fixed};
 
 #[derive(Debug, Default)]
@@ -28,7 +27,7 @@ pub struct Thumbnail<'a> {
     pub x: i16,
     pub y: i16,
 
-    config: &'a RefCell<Config>,
+    config: &'a DisplayConfig,
     border_fill: Picture,
 
     src_picture: Picture,
@@ -56,18 +55,15 @@ impl<'a> Thumbnail<'a> {
         character_name: String,
         src: Window,
         font: Font,
-        config: &'a RefCell<Config>,
+        config: &'a DisplayConfig,
         position: Option<(i16, i16)>,
     ) -> Result<Self> {
         let src_geom = conn.get_geometry(src)?.reply()?;
         
-        // Borrow config for the initialization
-        let cfg = config.borrow();
-        
         // Use saved position OR center on source window
         let (x, y) = position.unwrap_or_else(|| {
-            let x = src_geom.x + (src_geom.width - cfg.width) as i16 / 2;
-            let y = src_geom.y + (src_geom.height - cfg.height) as i16 / 2;
+            let x = src_geom.x + (src_geom.width - config.width) as i16 / 2;
+            let y = src_geom.y + (src_geom.height - config.height) as i16 / 2;
             (x, y)
         });
 
@@ -78,8 +74,8 @@ impl<'a> Thumbnail<'a> {
             screen.root,
             x,
             y,
-            cfg.width,
-            cfg.height,
+            config.width,
+            config.height,
             0,
             WindowClass::INPUT_OUTPUT,
             screen.root_visual,
@@ -102,7 +98,7 @@ impl<'a> Thumbnail<'a> {
             window,
             opacity_atom,
             AtomEnum::CARDINAL,
-            &[cfg.opacity],
+            &[config.opacity],
         )?;
 
         let wm_class = conn.intern_atom(false, b"WM_CLASS")?.reply()?.atom;
@@ -127,7 +123,7 @@ impl<'a> Thumbnail<'a> {
         conn.map_window(window)?;
 
         let border_fill = conn.generate_id()?;
-        conn.render_create_solid_fill(border_fill, cfg.border_color)?;
+        conn.render_create_solid_fill(border_fill, config.border_color)?;
 
         let pict_format = get_pictformat(conn, screen.root_depth, false)?;
         let src_picture = conn.generate_id()?;
@@ -137,7 +133,7 @@ impl<'a> Thumbnail<'a> {
 
         let overlay_pixmap = conn.generate_id()?;
         let overlay_picture = conn.generate_id()?;
-        conn.create_pixmap(32, overlay_pixmap, screen.root, cfg.width, cfg.height)?;
+        conn.create_pixmap(32, overlay_pixmap, screen.root, config.width, config.height)?;
         conn.render_create_picture(
             overlay_picture,
             overlay_pixmap,
@@ -151,15 +147,12 @@ impl<'a> Thumbnail<'a> {
             overlay_pixmap,
             &CreateGCAux::new()
                 .font(font)
-                .foreground(cfg.text_foreground)
-                .background(cfg.text_background),
+                .foreground(config.text_foreground)
+                .background(config.text_background),
         )?;
 
         let damage = conn.generate_id()?;
         conn.damage_create(damage, src, DamageReportLevel::RAW_RECTANGLES)?;
-
-        // Drop the borrow before creating Self
-        drop(cfg);
 
         let mut _self = Self {
             x,
@@ -189,10 +182,6 @@ impl<'a> Thumbnail<'a> {
         Ok(_self)
     }
 
-    fn cfg(&self) -> std::cell::Ref<Config> {
-        self.config.borrow()
-    }
-
     pub fn visibility(&mut self, visible: bool) -> Result<()> {
         if visible == self.visible {return Ok(());}
         self.visible = visible;
@@ -207,8 +196,8 @@ impl<'a> Thumbnail<'a> {
     fn capture(&self) -> Result<()> {
         let geom = self.conn.get_geometry(self.src)?.reply()?;
         let transform = Transform {
-            matrix11: to_fixed(geom.width as f32 / self.cfg().width as f32),
-            matrix22: to_fixed(geom.height as f32 / self.cfg().height as f32),
+            matrix11: to_fixed(geom.width as f32 / self.config.width as f32),
+            matrix22: to_fixed(geom.height as f32 / self.config.height as f32),
             matrix33: to_fixed(1.0),
             ..Default::default()
         };
@@ -225,8 +214,8 @@ impl<'a> Thumbnail<'a> {
             0,
             0,
             0,
-            self.cfg().width,
-            self.cfg().height,
+            self.config.width,
+            self.config.height,
         )?;
         Ok(())
     }
@@ -244,8 +233,8 @@ impl<'a> Thumbnail<'a> {
                 0,
                 0,
                 0,
-                self.cfg().width,
-                self.cfg().height,
+                self.config.width,
+                self.config.height,
             )?;
         } else {
             self.conn.render_composite(
@@ -259,8 +248,8 @@ impl<'a> Thumbnail<'a> {
                 0,
                 0,
                 0,
-                self.cfg().width,
-                self.cfg().height,
+                self.config.width,
+                self.config.height,
             )?;
         }
         self.update_name()?;
@@ -284,8 +273,8 @@ impl<'a> Thumbnail<'a> {
         self.conn.image_text8(
             self.overlay_pixmap,
             self.overlay_gc,
-            (self.cfg().width as i16 - extents.overall_width as i16) / 2,
-            (self.cfg().height as i16 + extents.font_ascent + extents.font_descent) / 2,
+            (self.config.width as i16 - extents.overall_width as i16) / 2,
+            (self.config.height as i16 + extents.font_ascent + extents.font_descent) / 2,
             b"MINIMIZED",
         )?;
         self.update()?;
@@ -303,16 +292,16 @@ impl<'a> Thumbnail<'a> {
             0,
             0,
             0,
-            self.cfg().border_size as i16,
-            self.cfg().border_size as i16,
-            self.cfg().width - self.cfg().border_size * 2,
-            self.cfg().height - self.cfg().border_size * 2,
+            self.config.border_size as i16,
+            self.config.border_size as i16,
+            self.config.width - self.config.border_size * 2,
+            self.config.height - self.config.border_size * 2,
         )?;
         self.conn.image_text8(
             self.overlay_pixmap,
             self.overlay_gc,
-            self.cfg().text_x,
-            self.cfg().text_y,
+            self.config.text_x,
+            self.config.text_y,
             self.character_name.as_bytes(),
         )?;
         Ok(())
@@ -330,8 +319,8 @@ impl<'a> Thumbnail<'a> {
             0,
             0,
             0,
-            self.cfg().width,
-            self.cfg().height,
+            self.config.width,
+            self.config.height,
         )?;
         Ok(())
     }
@@ -394,9 +383,9 @@ impl<'a> Thumbnail<'a> {
 
     pub fn is_hovered(&self, x: i16, y: i16) -> bool {
         x >= self.x
-            && x <= self.x + self.cfg().width as i16
+            && x <= self.x + self.config.width as i16
             && y >= self.y
-            && y <= self.y + self.cfg().height as i16
+            && y <= self.y + self.config.height as i16
     }
 }
 

@@ -8,7 +8,6 @@ mod thumbnail;
 mod x11_utils;
 
 use anyhow::Result;
-use std::cell::RefCell;
 use std::collections::HashMap;
 use tracing::{error, info, warn, Level as TraceLevel};
 use tracing_subscriber::FmtSubscriber;
@@ -18,7 +17,7 @@ use x11rb::protocol::xproto::*;
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as WrapperExt;
 
-use config::Config;
+use config::{DisplayConfig, PersistentState};
 use event_handler::handle_event;
 use persistence::SavedState;
 use thumbnail::Thumbnail;
@@ -27,7 +26,8 @@ use x11_utils::{is_window_eve, CachedAtoms};
 fn check_and_create_window<'a>(
     conn: &'a RustConnection,
     screen: &Screen,
-    config: &'a RefCell<Config>,
+    config: &'a DisplayConfig,
+    persistent_state: &PersistentState,
     window: Window,
     atoms: &CachedAtoms,
     state: &SavedState,
@@ -71,7 +71,7 @@ fn check_and_create_window<'a>(
         conn.open_font(font, b"fixed")?;
         
         // Get saved position for this character/window
-        let position = state.get_position(&character_name, window, &config.borrow());
+        let position = state.get_position(&character_name, window, &persistent_state.character_positions);
         
         let thumbnail = Thumbnail::new(conn, screen, character_name, window, font, config, position)?;
         conn.close_font(font)?;
@@ -85,7 +85,8 @@ fn check_and_create_window<'a>(
 fn get_eves<'a>(
     conn: &'a RustConnection,
     screen: &Screen,
-    config: &'a RefCell<Config>,
+    config: &'a DisplayConfig,
+    persistent_state: &PersistentState,
     atoms: &CachedAtoms,
     state: &SavedState,
 ) -> Result<HashMap<Window, Thumbnail<'a>>> {
@@ -107,7 +108,7 @@ fn get_eves<'a>(
 
     let mut eves = HashMap::new();
     for w in windows {
-        if let Some(eve) = check_and_create_window(conn, screen, config, w, atoms, state)? {
+        if let Some(eve) = check_and_create_window(conn, screen, config, persistent_state, w, atoms, state)? {
             eves.insert(w, eve);
         }
     }
@@ -122,11 +123,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tracing::subscriber::set_global_default(subscriber)?;
 
-    let config = RefCell::new(Config::load());
-    info!("config={:#?}", config.borrow());
+    let mut persistent_state = PersistentState::load();
+    let config = persistent_state.build_display_config();
+    info!("config={:#?}", config);
     
-    let mut state = SavedState::new();
-    info!("loaded {} character positions from config", config.borrow().character_positions.len());
+    let mut session_state = SavedState::new();
+    info!("loaded {} character positions from config", persistent_state.character_positions.len());
 
     let (conn, screen_num) = x11rb::connect(None)?;
     let screen = &conn.setup().roots[screen_num];
@@ -146,10 +148,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     info!("successfully connected to x11: screen={screen_num}");
 
-    let mut eves = get_eves(&conn, screen, &config, &atoms, &state)?;
+    let mut eves = get_eves(&conn, screen, &config, &persistent_state, &atoms, &session_state)?;
     loop {
         let event = conn.wait_for_event()?;
-        let _ = handle_event(&conn, screen, &config, &mut eves, event, &atoms, &mut state, check_and_create_window)
-            .inspect_err(|err| error!("ecountered error in 'handle_event': err={err:#?}"));
+        let _ = handle_event(
+            &conn,
+            screen,
+            &config,
+            &mut persistent_state,
+            &mut eves,
+            event,
+            &atoms,
+            &mut session_state,
+            check_and_create_window
+        ).inspect_err(|err| error!("ecountered error in 'handle_event': err={err:#?}"));
     }
 }

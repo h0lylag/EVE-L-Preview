@@ -4,34 +4,46 @@ use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
-use tracing::error;
+use tracing::{error, info};
 use x11rb::protocol::render::Color;
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Config {
+/// Immutable display settings (loaded once at startup)
+/// Can be borrowed by Thumbnails without RefCell
+#[derive(Debug, Clone)]
+pub struct DisplayConfig {
     pub width: u16,
     pub height: u16,
-    #[serde(skip)]
     pub opacity: u32,
+    pub border_size: u16,
+    pub border_color: Color,
+    pub text_x: i16,
+    pub text_y: i16,
+    pub text_foreground: u32,
+    pub text_background: u32,
+    pub hide_when_no_focus: bool,
+}
+
+/// Persistent state that gets saved to TOML file
+/// Contains both immutable display config and mutable runtime data
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PersistentState {
+    // Display settings (immutable after load)
+    pub width: u16,
+    pub height: u16,
     #[serde(rename = "opacity_percent")]
     opacity_percent: u8,
     pub border_size: u16,
-    #[serde(skip)]
-    pub border_color: Color,
     #[serde(rename = "border_color", serialize_with = "serialize_color", deserialize_with = "deserialize_color")]
     border_color_hex: String,
     pub text_x: i16,
     pub text_y: i16,
-    #[serde(skip)]
-    pub text_foreground: u32,
     #[serde(rename = "text_foreground")]
     text_foreground_hex: String,
-    #[serde(skip)]
-    pub text_background: u32,
     #[serde(rename = "text_background")]
     text_background_hex: String,
     pub hide_when_no_focus: bool,
     
+    // Mutable runtime state (persisted)
     /// Character name → (x, y) position
     /// Persisted positions for each character's thumbnail
     #[serde(default)]
@@ -60,7 +72,7 @@ where
     String::deserialize(deserializer)
 }
 
-impl Config {
+impl PersistentState {
     fn config_path() -> PathBuf {
         let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
         path.push("eve-l-preview");
@@ -68,58 +80,70 @@ impl Config {
         path
     }
 
+    /// Build DisplayConfig from current settings
+    /// Returns a new DisplayConfig that can be used independently
+    pub fn build_display_config(&self) -> DisplayConfig {
+        // Parse colors from hex strings
+        let border_color = Self::parse_hex_color(&self.border_color_hex)
+            .map(Self::u32_to_color)
+            .unwrap_or_else(|| {
+                error!("Invalid border_color hex, using default");
+                Self::u32_to_color(0x7FFF0000)
+            });
+        
+        let text_foreground = Self::parse_hex_color(&self.text_foreground_hex)
+            .map(Self::premultiply_argb32)
+            .unwrap_or_else(|| {
+                error!("Invalid text_foreground hex, using default");
+                Self::premultiply_argb32(0xFF_FF_FF_FF)
+            });
+        
+        let text_background = Self::parse_hex_color(&self.text_background_hex)
+            .map(Self::premultiply_argb32)
+            .unwrap_or_else(|| {
+                error!("Invalid text_background hex, using default");
+                Self::premultiply_argb32(0x7F_00_00_00)
+            });
+        
+        let opacity = Self::percent_to_opacity(self.opacity_percent);
+        
+        DisplayConfig {
+            width: self.width,
+            height: self.height,
+            opacity,
+            border_size: self.border_size,
+            border_color,
+            text_x: self.text_x,
+            text_y: self.text_y,
+            text_foreground,
+            text_background,
+            hide_when_no_focus: self.hide_when_no_focus,
+        }
+    }
+
     pub fn load() -> Self {
         // Try to load existing config file
         let config_path = Self::config_path();
         if let Ok(contents) = fs::read_to_string(&config_path) {
-            if let Ok(mut config) = toml::from_str::<Config>(&contents) {
-                // Convert hex string to Color struct for border
-                if let Some(color_u32) = Self::parse_hex_color(&config.border_color_hex) {
-                    config.border_color = Self::u32_to_color(color_u32);
-                } else {
-                    error!("Invalid border_color hex, using default");
-                    config.border_color = Self::u32_to_color(0x7FFF0000);
-                    config.border_color_hex = "#7FFF0000".to_string();
-                }
-                
-                // Convert hex string to u32 for text colors (with premultiply)
-                if let Some(fg) = Self::parse_hex_color(&config.text_foreground_hex) {
-                    config.text_foreground = Self::premultiply_argb32(fg);
-                } else {
-                    error!("Invalid text_foreground hex, using default");
-                    config.text_foreground = Self::premultiply_argb32(0xFF_FF_FF_FF);
-                    config.text_foreground_hex = "#FFFFFFFF".to_string();
-                }
-                
-                if let Some(bg) = Self::parse_hex_color(&config.text_background_hex) {
-                    config.text_background = Self::premultiply_argb32(bg);
-                } else {
-                    error!("Invalid text_background hex, using default");
-                    config.text_background = Self::premultiply_argb32(0x7F_00_00_00);
-                    config.text_background_hex = "#7F000000".to_string();
-                }
-                
-                // Convert opacity percentage to ARGB32 format
-                config.opacity = Self::percent_to_opacity(config.opacity_percent);
-                
+            if let Ok(mut state) = toml::from_str::<PersistentState>(&contents) {
                 // Apply env var overrides
-                config.apply_env_overrides();
-                return config;
+                state.apply_env_overrides();
+                return state;
             }
         }
 
         // Generate new config from env vars
-        let config = Self::from_env();
+        let state = Self::from_env();
         
         // Save for next time
-        if let Err(e) = config.save() {
+        if let Err(e) = state.save() {
             error!("Failed to save config: {e:?}");
         } else {
             println!("Generated config file: {}", config_path.display());
             println!("Edit it to customize settings (env vars still override)");
         }
         
-        config
+        state
     }
 
     pub fn save(&self) -> Result<()> {
@@ -130,6 +154,46 @@ impl Config {
         let contents = toml::to_string_pretty(self)?;
         fs::write(&path, contents)?;
         Ok(())
+    }
+
+    /// Update position after drag - saves to character_positions and persists
+    pub fn update_position(&mut self, character_name: &str, x: i16, y: i16) -> Result<()> {
+        if !character_name.is_empty() {
+            info!("Saving position for character '{}': ({}, {})", character_name, x, y);
+            self.character_positions.insert(character_name.to_string(), (x, y));
+            self.save()?;
+        }
+        Ok(())
+    }
+
+    /// Handle character name change (login/logout)
+    /// Returns new position if the new character has a saved position
+    pub fn handle_character_change(
+        &mut self,
+        old_name: &str,
+        new_name: &str,
+        current_position: (i16, i16),
+    ) -> Result<Option<(i16, i16)>> {
+        info!("Character change: '{}' → '{}'", old_name, new_name);
+        
+        // Save old position
+        if !old_name.is_empty() {
+            self.character_positions.insert(old_name.to_string(), current_position);
+        }
+        
+        // Save to disk
+        self.save()?;
+        
+        // Return new position if we have one saved for the new character
+        if !new_name.is_empty() {
+            if let Some(&new_pos) = self.character_positions.get(new_name) {
+                info!("Moving to saved position for '{}': {:?}", new_name, new_pos);
+                return Ok(Some(new_pos));
+            }
+        }
+        
+        // Character logged out OR new character with no saved position → keep current position
+        Ok(None)
     }
 
     fn u32_to_color(raw: u32) -> Color {
@@ -204,16 +268,12 @@ impl Config {
         Self {
             width: Self::parse_num("WIDTH").unwrap_or(240),
             height: Self::parse_num("HEIGHT").unwrap_or(135),
-            opacity,
             opacity_percent: Self::opacity_to_percent(opacity),
             border_size: Self::parse_num("BORDER_SIZE").unwrap_or(5),
-            border_color: Self::u32_to_color(border_color_raw),
             border_color_hex: Self::u32_to_hex_color(border_color_raw),
             text_x: Self::parse_num("TEXT_X").unwrap_or(10),
             text_y: Self::parse_num("TEXT_Y").unwrap_or(20),
-            text_foreground: Self::premultiply_argb32(text_fg_raw),
             text_foreground_hex: Self::u32_to_hex_color(text_fg_raw),
-            text_background: Self::premultiply_argb32(text_bg_raw),
             text_background_hex: Self::u32_to_hex_color(text_bg_raw),
             hide_when_no_focus: env::var("HIDE_WHEN_NO_FOCUS")
                 .map(|x| x.parse().unwrap_or(false))
@@ -231,7 +291,6 @@ impl Config {
             self.height = height;
         }
         if let Some(opacity) = Self::parse_num("OPACITY") {
-            self.opacity = opacity;
             self.opacity_percent = Self::opacity_to_percent(opacity);
         }
         if let Some(border_size) = Self::parse_num("BORDER_SIZE") {
@@ -239,7 +298,6 @@ impl Config {
         }
         if let Some(border_color_raw) = Self::parse_num("BORDER_COLOR") {
             self.border_color_hex = Self::u32_to_hex_color(border_color_raw);
-            self.border_color = Self::u32_to_color(border_color_raw);
         }
         if let Some(text_x) = Self::parse_num("TEXT_X") {
             self.text_x = text_x;
@@ -249,11 +307,9 @@ impl Config {
         }
         if let Some(text_fg) = Self::parse_num("TEXT_FOREGROUND") {
             self.text_foreground_hex = Self::u32_to_hex_color(text_fg);
-            self.text_foreground = Self::premultiply_argb32(text_fg);
         }
         if let Some(text_bg) = Self::parse_num("TEXT_BACKGROUND") {
             self.text_background_hex = Self::u32_to_hex_color(text_bg);
-            self.text_background = Self::premultiply_argb32(text_bg);
         }
         if let Ok(hide) = env::var("HIDE_WHEN_NO_FOCUS") {
             self.hide_when_no_focus = hide.parse().unwrap_or(false);

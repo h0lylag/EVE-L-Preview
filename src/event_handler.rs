@@ -1,5 +1,4 @@
 use anyhow::Result;
-use std::cell::RefCell;
 use std::collections::HashMap;
 use x11rb::connection::Connection;
 use x11rb::protocol::damage::ConnectionExt as DamageExt;
@@ -8,7 +7,7 @@ use x11rb::protocol::xproto::*;
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as WrapperExt;
 
-use crate::config::Config;
+use crate::config::{DisplayConfig, PersistentState};
 use crate::persistence::SavedState;
 use crate::snapping;
 use crate::thumbnail::Thumbnail;
@@ -17,12 +16,13 @@ use crate::x11_utils::{is_window_eve, CachedAtoms};
 pub fn handle_event<'a>(
     conn: &'a RustConnection,
     screen: &Screen,
-    config: &'a RefCell<Config>,
+    config: &'a DisplayConfig,
+    persistent_state: &mut PersistentState,
     eves: &mut HashMap<Window, Thumbnail<'a>>,
     event: Event,
     atoms: &CachedAtoms,
-    state: &mut SavedState,
-    check_and_create_window: impl Fn(&'a RustConnection, &Screen, &'a RefCell<Config>, Window, &CachedAtoms, &SavedState) -> Result<Option<Thumbnail<'a>>>,
+    session_state: &mut SavedState,
+    check_and_create_window: impl Fn(&'a RustConnection, &Screen, &'a DisplayConfig, &PersistentState, Window, &CachedAtoms, &SavedState) -> Result<Option<Thumbnail<'a>>>,
 ) -> Result<()> {
     match event {
         DamageNotify(event) => {
@@ -36,7 +36,7 @@ pub fn handle_event<'a>(
             }
         }
         CreateNotify(event) => {
-            if let Some(thumbnail) = check_and_create_window(conn, screen, config, event.window, atoms, state)? {
+            if let Some(thumbnail) = check_and_create_window(conn, screen, config, persistent_state, event.window, atoms, session_state)? {
                 eves.insert(event.window, thumbnail);
             }
         }
@@ -52,20 +52,21 @@ pub fn handle_event<'a>(
                 let old_name = thumbnail.character_name.clone();
                 let current_pos = (thumbnail.x, thumbnail.y);
                 
-                // Ask state manager what to do
-                let new_position = state.handle_character_change(
-                    event.window,
+                // Ask persistent state what to do
+                let new_position = persistent_state.handle_character_change(
                     &old_name,
                     &new_character_name,
                     current_pos,
-                    &mut config.borrow_mut(),
                 )?;
+                
+                // Update session state
+                session_state.update_window_position(event.window, current_pos.0, current_pos.1);
                 
                 // Update thumbnail (may move to new position)
                 thumbnail.set_character_name(new_character_name, new_position)?;
                 
             } else if event.atom == atoms.wm_name
-                && let Some(thumbnail) = check_and_create_window(conn, screen, config, event.window, atoms, state)?
+                && let Some(thumbnail) = check_and_create_window(conn, screen, config, persistent_state, event.window, atoms, session_state)?
             {
                 eves.insert(event.window, thumbnail);
             } else if event.atom == atoms.net_wm_state
@@ -84,7 +85,7 @@ pub fn handle_event<'a>(
                 thumbnail.minimized = false;
                 thumbnail.focused = true;
                 thumbnail.border(true)?;
-                if config.borrow().hide_when_no_focus && eves.values().any(|x| !x.visible) {
+                if config.hide_when_no_focus && eves.values().any(|x| !x.visible) {
                     for thumbnail in eves.values_mut() {
                         thumbnail.visibility(true)?;
                     }
@@ -95,7 +96,7 @@ pub fn handle_event<'a>(
             if let Some(thumbnail) = eves.get_mut(&event.event) {
                 thumbnail.focused = false;
                 thumbnail.border(false)?;
-                if config.borrow().hide_when_no_focus && eves.values().all(|x| !x.focused && !x.minimized) {
+                if config.hide_when_no_focus && eves.values().all(|x| !x.focused && !x.minimized) {
                     for thumbnail in eves.values_mut() {
                         thumbnail.visibility(false)?;
                     }
@@ -130,12 +131,13 @@ pub fn handle_event<'a>(
                 
                 // Save position after drag ends (right-click release)
                 if thumbnail.input_state.dragging {
-                    state.update_position(
+                    // Update session state
+                    session_state.update_window_position(thumbnail.window, thumbnail.x, thumbnail.y);
+                    // Persist character position
+                    persistent_state.update_position(
                         &thumbnail.character_name,
-                        thumbnail.window,
                         thumbnail.x,
                         thumbnail.y,
-                        &mut config.borrow_mut(),
                     )?;
                 }
                 
@@ -158,12 +160,11 @@ pub fn handle_event<'a>(
             
             if let Some((dragged_window, new_x, new_y)) = drag_info {
                 // Build rect for dragged thumbnail
-                let cfg = config.borrow();
                 let dragged_rect = snapping::Rect {
                     x: new_x,
                     y: new_y,
-                    width: cfg.width,
-                    height: cfg.height,
+                    width: config.width,
+                    height: config.height,
                 };
                 
                 // Build list of other thumbnails for snapping
@@ -173,13 +174,12 @@ pub fn handle_event<'a>(
                     .map(|(win, t)| (*win, snapping::Rect {
                         x: t.x,
                         y: t.y,
-                        width: cfg.width,
-                        height: cfg.height,
+                        width: config.width,
+                        height: config.height,
                     }))
                     .collect();
                 
-                let snap_threshold = cfg.snap_threshold;
-                drop(cfg); // Release borrow before repositioning
+                let snap_threshold = persistent_state.snap_threshold;
                 
                 // Find snap position
                 let (final_x, final_y) = snapping::find_snap_position(
