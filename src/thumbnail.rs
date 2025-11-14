@@ -27,6 +27,8 @@ pub struct Thumbnail<'a> {
     pub window: Window,
     pub x: i16,
     pub y: i16,
+    pub width: u16,
+    pub height: u16,
 
     config: &'a DisplayConfig,
     border_fill: Picture,
@@ -56,13 +58,15 @@ impl<'a> Thumbnail<'a> {
         src: Window,
         font: Font,
         position: Option<Position>,
+        width: u16,
+        height: u16,
     ) -> Result<Self> {
         let src_geom = ctx.conn.get_geometry(src)?.reply()?;
         
         // Use saved position OR center on source window
         let Position { x, y } = position.unwrap_or_else(|| {
-            let x = src_geom.x + (src_geom.width - ctx.config.width) as i16 / 2;
-            let y = src_geom.y + (src_geom.height - ctx.config.height) as i16 / 2;
+            let x = src_geom.x + (src_geom.width - width) as i16 / 2;
+            let y = src_geom.y + (src_geom.height - height) as i16 / 2;
             Position::new(x, y)
         });
 
@@ -73,8 +77,8 @@ impl<'a> Thumbnail<'a> {
             ctx.screen.root,
             x,
             y,
-            ctx.config.width,
-            ctx.config.height,
+            width,
+            height,
             0,
             WindowClass::INPUT_OUTPUT,
             ctx.screen.root_visual,
@@ -132,7 +136,7 @@ impl<'a> Thumbnail<'a> {
 
         let overlay_pixmap = ctx.conn.generate_id()?;
         let overlay_picture = ctx.conn.generate_id()?;
-        ctx.conn.create_pixmap(32, overlay_pixmap, ctx.screen.root, ctx.config.width, ctx.config.height)?;
+        ctx.conn.create_pixmap(32, overlay_pixmap, ctx.screen.root, width, height)?;
         ctx.conn.render_create_picture(
             overlay_picture,
             overlay_pixmap,
@@ -156,6 +160,8 @@ impl<'a> Thumbnail<'a> {
         let mut _self = Self {
             x,
             y,
+            width,
+            height,
             window,
             config: ctx.config,
 
@@ -195,8 +201,8 @@ impl<'a> Thumbnail<'a> {
     fn capture(&self) -> Result<()> {
         let geom = self.conn.get_geometry(self.src)?.reply()?;
         let transform = Transform {
-            matrix11: to_fixed(geom.width as f32 / self.config.width as f32),
-            matrix22: to_fixed(geom.height as f32 / self.config.height as f32),
+            matrix11: to_fixed(geom.width as f32 / self.width as f32),
+            matrix22: to_fixed(geom.height as f32 / self.height as f32),
             matrix33: to_fixed(1.0),
             ..Default::default()
         };
@@ -213,8 +219,8 @@ impl<'a> Thumbnail<'a> {
             0,
             0,
             0,
-            self.config.width,
-            self.config.height,
+            self.width,
+            self.height,
         )?;
         Ok(())
     }
@@ -232,8 +238,8 @@ impl<'a> Thumbnail<'a> {
                 0,
                 0,
                 0,
-                self.config.width,
-                self.config.height,
+                self.width,
+                self.height,
             )?;
         } else {
             self.conn.render_composite(
@@ -247,8 +253,8 @@ impl<'a> Thumbnail<'a> {
                 0,
                 0,
                 0,
-                self.config.width,
-                self.config.height,
+                self.width,
+                self.height,
             )?;
         }
         self.update_name()?;
@@ -272,8 +278,8 @@ impl<'a> Thumbnail<'a> {
         self.conn.image_text8(
             self.overlay_pixmap,
             self.overlay_gc,
-            (self.config.width as i16 - extents.overall_width as i16) / 2,
-            (self.config.height as i16 + extents.font_ascent + extents.font_descent) / 2,
+            (self.width as i16 - extents.overall_width as i16) / 2,
+            (self.height as i16 + extents.font_ascent + extents.font_descent) / 2,
             b"MINIMIZED",
         )?;
         self.update()?;
@@ -293,8 +299,8 @@ impl<'a> Thumbnail<'a> {
             0,
             self.config.border_size as i16,
             self.config.border_size as i16,
-            self.config.width - self.config.border_size * 2,
-            self.config.height - self.config.border_size * 2,
+            self.width - self.config.border_size * 2,
+            self.height - self.config.border_size * 2,
         )?;
         self.conn.image_text8(
             self.overlay_pixmap,
@@ -318,8 +324,8 @@ impl<'a> Thumbnail<'a> {
             0,
             0,
             0,
-            self.config.width,
-            self.config.height,
+            self.width,
+            self.height,
         )?;
         Ok(())
     }
@@ -382,9 +388,9 @@ impl<'a> Thumbnail<'a> {
 
     pub fn is_hovered(&self, x: i16, y: i16) -> bool {
         x >= self.x
-            && x <= self.x + self.config.width as i16
+            && x <= self.x + self.width as i16
             && y >= self.y
-            && y <= self.y + self.config.height as i16
+            && y <= self.y + self.height as i16
     }
 }
 

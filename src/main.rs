@@ -67,10 +67,30 @@ fn check_and_create_window<'a>(
         let font = ctx.conn.generate_id()?;
         ctx.conn.open_font(font, b"fixed")?;
         
-        // Get saved position for this character/window
+        // Get saved position and dimensions for this character/window
         let position = state.get_position(&character_name, window, &persistent_state.character_positions);
         
-        let thumbnail = Thumbnail::new(ctx, character_name, window, font, position)?;
+        // Get dimensions from CharacterSettings or use auto-detected defaults
+        let (width, height) = if let Some(settings) = persistent_state.character_positions.get(&character_name) {
+            let (w, h) = settings.dimensions();
+            // If dimensions are 0 (not yet saved), auto-detect
+            if w == 0 || h == 0 {
+                persistent_state.default_thumbnail_size(
+                    ctx.screen.width_in_pixels,
+                    ctx.screen.height_in_pixels,
+                )
+            } else {
+                (w, h)
+            }
+        } else {
+            // Character not in settings yet - auto-detect
+            persistent_state.default_thumbnail_size(
+                ctx.screen.width_in_pixels,
+                ctx.screen.height_in_pixels,
+            )
+        };
+        
+        let thumbnail = Thumbnail::new(ctx, character_name, window, font, position, width, height)?;
         ctx.conn.close_font(font)?;
         info!("constructed Thumbnail for eve window: window={window}");
         Ok(Some(thumbnail))
@@ -130,15 +150,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tracing::subscriber::set_global_default(subscriber)?;
 
-    let mut persistent_state = PersistentState::load();
+    // Connect to X11 first to get screen dimensions for smart config defaults
+    let (conn, screen_num) = x11rb::connect(None)?;
+    let screen = &conn.setup().roots[screen_num];
+    info!("successfully connected to x11: screen={screen_num}, dimensions={}x{}", 
+          screen.width_in_pixels, screen.height_in_pixels);
+
+    // Load config with screen-aware defaults
+    let mut persistent_state = PersistentState::load_with_screen(
+        screen.width_in_pixels,
+        screen.height_in_pixels,
+    );
     let config = persistent_state.build_display_config();
     info!("config={:#?}", config);
     
     let mut session_state = SavedState::new();
     info!("loaded {} character positions from config", persistent_state.character_positions.len());
-
-    let (conn, screen_num) = x11rb::connect(None)?;
-    let screen = &conn.setup().roots[screen_num];
     
     // Pre-cache atoms once at startup (eliminates roundtrip overhead)
     let atoms = CachedAtoms::new(&conn)?;
@@ -153,7 +180,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 | EventMask::POINTER_MOTION,
         ),
     )?;
-    info!("successfully connected to x11: screen={screen_num}");
 
     let ctx = AppContext {
         conn: &conn,

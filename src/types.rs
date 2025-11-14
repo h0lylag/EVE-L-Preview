@@ -38,6 +38,33 @@ impl From<Position> for (i16, i16) {
     }
 }
 
+/// Per-character settings: position and thumbnail dimensions
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CharacterSettings {
+    pub x: i16,
+    pub y: i16,
+    /// Thumbnail width (0 = use auto-detect)
+    #[serde(default)]
+    pub width: u16,
+    /// Thumbnail height (0 = use auto-detect)
+    #[serde(default)]
+    pub height: u16,
+}
+
+impl CharacterSettings {
+    pub fn new(x: i16, y: i16, width: u16, height: u16) -> Self {
+        Self { x, y, width, height }
+    }
+    
+    pub fn position(&self) -> Position {
+        Position::new(self.x, self.y)
+    }
+    
+    pub fn dimensions(&self) -> (u16, u16) {
+        (self.width, self.height)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

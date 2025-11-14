@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use tracing::info;
 use x11rb::protocol::xproto::Window;
 
-use crate::types::Position;
+use crate::types::{CharacterSettings, Position};
 
 /// Runtime state for position tracking
 /// Window positions are session-only (not persisted to disk)
@@ -40,13 +40,13 @@ impl SavedState {
         &self,
         character_name: &str,
         window: Window,
-        character_positions: &HashMap<String, Position>,
+        character_positions: &HashMap<String, CharacterSettings>,
     ) -> Option<Position> {
         // If character has a name (not just "EVE"), check character position from config
         if !character_name.is_empty() {
-            if let Some(&pos) = character_positions.get(character_name) {
-                info!("Using saved position for character '{}': {:?}", character_name, pos);
-                return Some(pos);
+            if let Some(settings) = character_positions.get(character_name) {
+                info!("Using saved position for character '{}': Position {{ x: {}, y: {} }}", character_name, settings.x, settings.y);
+                return Some(settings.position());
             }
             
             // TODO: When config option is added, check inherit_window_position here
@@ -86,7 +86,7 @@ mod tests {
     fn test_get_position_character_from_config() {
         let state = SavedState::new();
         let mut char_positions = HashMap::new();
-        char_positions.insert("Alice".to_string(), Position::new(100, 200));
+        char_positions.insert("Alice".to_string(), CharacterSettings::new(100, 200, 240, 135));
         
         let pos = state.get_position("Alice", 123, &char_positions);
         assert_eq!(pos, Some(Position::new(100, 200)));
@@ -161,7 +161,7 @@ mod tests {
         state.inherit_window_position = true;
         
         let mut char_positions = HashMap::new();
-        char_positions.insert("Eve".to_string(), Position::new(1100, 1200));
+        char_positions.insert("Eve".to_string(), CharacterSettings::new(1100, 1200, 240, 135));
         
         // Character position should take priority even with inherit enabled
         let pos = state.get_position("Eve", 333, &char_positions);

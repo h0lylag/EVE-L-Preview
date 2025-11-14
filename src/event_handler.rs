@@ -86,11 +86,13 @@ pub fn handle_event<'a>(
                 let old_name = thumbnail.character_name.clone();
                 let current_pos = Position::new(thumbnail.x, thumbnail.y);
                 
-                // Ask persistent state what to do
+                // Ask persistent state what to do - pass current dimensions to ensure they're saved
                 let new_position = persistent_state.handle_character_change(
                     &old_name,
                     &new_character_name,
                     current_pos,
+                    thumbnail.width,
+                    thumbnail.height,
                 )?;
                 
                 // Update session state
@@ -167,11 +169,13 @@ pub fn handle_event<'a>(
                 if thumbnail.input_state.dragging {
                     // Update session state
                     session_state.update_window_position(thumbnail.window, thumbnail.x, thumbnail.y);
-                    // Persist character position
+                    // Persist character position AND dimensions
                     persistent_state.update_position(
                         &thumbnail.character_name,
                         thumbnail.x,
                         thumbnail.y,
+                        thumbnail.width,
+                        thumbnail.height,
                     )?;
                 }
                 
@@ -186,12 +190,12 @@ pub fn handle_event<'a>(
                 .map(|(win, t)| (*win, Rect {
                     x: t.x,
                     y: t.y,
-                    width: ctx.config.width,
-                    height: ctx.config.height,
+                    width: t.width,
+                    height: t.height,
                 }))
                 .collect();
             
-            let snap_threshold = persistent_state.snap_threshold;
+            let snap_threshold = persistent_state.global.snap_threshold;
             
             // Handle drag for all thumbnails (mutable pass)
             for thumbnail in eves.values_mut() {
@@ -199,8 +203,8 @@ pub fn handle_event<'a>(
                     thumbnail,
                     &event,
                     &others,
-                    ctx.config.width,
-                    ctx.config.height,
+                    thumbnail.width,
+                    thumbnail.height,
                     snap_threshold,
                 )?;
             }
