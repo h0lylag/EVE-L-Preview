@@ -1,5 +1,7 @@
 use x11rb::protocol::xproto::Window;
 
+use crate::types::Position;
+
 #[derive(Debug, Clone, Copy)]
 pub struct Rect {
     pub x: i16,
@@ -33,12 +35,12 @@ struct SnapCandidate {
 }
 
 /// Find the best snap position for a dragged thumbnail
-/// Returns (x, y) if snapping should occur, None otherwise
+/// Returns position if snapping should occur, None otherwise
 pub fn find_snap_position(
     dragged: Rect,
     others: &[(Window, Rect)],
     threshold: u16,
-) -> Option<(i16, i16)> {
+) -> Option<Position> {
     if threshold == 0 {
         return None; // Snapping disabled
     }
@@ -74,9 +76,9 @@ pub fn find_snap_position(
     let snap_y = best_y.map(|s| dragged.y + s.offset);
     
     match (snap_x, snap_y) {
-        (Some(x), Some(y)) => Some((x, y)),
-        (Some(x), None) => Some((x, dragged.y)),
-        (None, Some(y)) => Some((dragged.x, y)),
+        (Some(x), Some(y)) => Some(Position::new(x, y)),
+        (Some(x), None) => Some(Position::new(x, dragged.y)),
+        (None, Some(y)) => Some(Position::new(dragged.x, y)),
         (None, None) => None,
     }
 }

@@ -6,6 +6,7 @@ mod event_handler;
 mod persistence;
 mod snapping;
 mod thumbnail;
+mod types;
 mod x11_utils;
 
 use anyhow::Result;
@@ -15,10 +16,8 @@ use tracing_subscriber::FmtSubscriber;
 use x11rb::connection::Connection;
 use x11rb::protocol::damage::ConnectionExt as DamageExt;
 use x11rb::protocol::xproto::*;
-use x11rb::rust_connection::RustConnection;
-use x11rb::wrapper::ConnectionExt as WrapperExt;
 
-use config::{DisplayConfig, PersistentState};
+use config::PersistentState;
 use event_handler::handle_event;
 use persistence::SavedState;
 use thumbnail::Thumbnail;

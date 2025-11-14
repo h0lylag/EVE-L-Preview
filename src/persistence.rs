@@ -3,13 +3,15 @@ use std::collections::HashMap;
 use tracing::info;
 use x11rb::protocol::xproto::Window;
 
+use crate::types::Position;
+
 /// Runtime state for position tracking
 /// Window positions are session-only (not persisted to disk)
 pub struct SavedState {
-    /// Window ID → (x, y) position (session-only, not persisted)
+    /// Window ID → position (session-only, not persisted)
     /// Used for logged-out windows that show "EVE" without character name
     /// Window IDs are ephemeral and don't survive X11 server restarts
-    pub window_positions: HashMap<Window, (i16, i16)>,
+    pub window_positions: HashMap<Window, Position>,
     
     /// TODO: Move to PersistentState - behavior for new characters on existing windows
     /// - false: New character spawns centered (current behavior)
@@ -38,8 +40,8 @@ impl SavedState {
         &self,
         character_name: &str,
         window: Window,
-        character_positions: &HashMap<String, (i16, i16)>,
-    ) -> Option<(i16, i16)> {
+        character_positions: &HashMap<String, Position>,
+    ) -> Option<Position> {
         // If character has a name (not just "EVE"), check character position from config
         if !character_name.is_empty() {
             if let Some(&pos) = character_positions.get(character_name) {
@@ -71,7 +73,7 @@ impl SavedState {
 
     /// Update session position (window tracking)
     pub fn update_window_position(&mut self, window: Window, x: i16, y: i16) {
-        self.window_positions.insert(window, (x, y));
+        self.window_positions.insert(window, Position::new(x, y));
         info!("Saved session position for window {}: ({}, {})", window, x, y);
     }
 }

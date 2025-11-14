@@ -4,14 +4,13 @@ use x11rb::connection::Connection;
 use x11rb::protocol::damage::ConnectionExt as DamageExt;
 use x11rb::protocol::Event::{self, CreateNotify, DamageNotify, DestroyNotify, PropertyNotify};
 use x11rb::protocol::xproto::*;
-use x11rb::rust_connection::RustConnection;
-use x11rb::wrapper::ConnectionExt as WrapperExt;
 
-use crate::config::{DisplayConfig, PersistentState};
+use crate::config::PersistentState;
 use crate::persistence::SavedState;
 use crate::snapping::{self, Rect};
 use crate::thumbnail::Thumbnail;
-use crate::x11_utils::{is_window_eve, AppContext, CachedAtoms};
+use crate::types::Position;
+use crate::x11_utils::{is_window_eve, AppContext};
 
 /// Handle drag motion for a single thumbnail with snapping
 fn handle_drag_motion(
@@ -26,10 +25,10 @@ fn handle_drag_motion(
         return Ok(());
     }
 
-    let dx = event.root_x - thumbnail.input_state.drag_start.0;
-    let dy = event.root_y - thumbnail.input_state.drag_start.1;
-    let new_x = thumbnail.input_state.win_start.0 + dx;
-    let new_y = thumbnail.input_state.win_start.1 + dy;
+    let dx = event.root_x - thumbnail.input_state.drag_start.x;
+    let dy = event.root_y - thumbnail.input_state.drag_start.y;
+    let new_x = thumbnail.input_state.win_start.x + dx;
+    let new_y = thumbnail.input_state.win_start.y + dy;
 
     let dragged_rect = Rect {
         x: new_x,
@@ -38,11 +37,11 @@ fn handle_drag_motion(
         height: config_height,
     };
 
-    let (final_x, final_y) = snapping::find_snap_position(
+    let Position { x: final_x, y: final_y } = snapping::find_snap_position(
         dragged_rect,
         others,
         snap_threshold,
-    ).unwrap_or((new_x, new_y));
+    ).unwrap_or_else(|| Position::new(new_x, new_y));
 
     if final_x != thumbnail.x || final_y != thumbnail.y {
         thumbnail.reposition(final_x, final_y)?;
@@ -85,7 +84,7 @@ pub fn handle_event<'a>(
             {
                 // Character name changed (login/logout/character switch)
                 let old_name = thumbnail.character_name.clone();
-                let current_pos = (thumbnail.x, thumbnail.y);
+                let current_pos = Position::new(thumbnail.x, thumbnail.y);
                 
                 // Ask persistent state what to do
                 let new_position = persistent_state.handle_character_change(
@@ -95,7 +94,7 @@ pub fn handle_event<'a>(
                 )?;
                 
                 // Update session state
-                session_state.update_window_position(event.window, current_pos.0, current_pos.1);
+                session_state.update_window_position(event.window, current_pos.x, current_pos.y);
                 
                 // Update thumbnail (may move to new position)
                 thumbnail.set_character_name(new_character_name, new_position)?;
@@ -144,8 +143,8 @@ pub fn handle_event<'a>(
                 .find(|(_, thumb)| thumb.is_hovered(event.root_x, event.root_y) && thumb.visible)
             {
                 let geom = ctx.conn.get_geometry(thumbnail.window)?.reply()?;
-                thumbnail.input_state.drag_start = (event.root_x, event.root_y);
-                thumbnail.input_state.win_start = (geom.x, geom.y);
+                thumbnail.input_state.drag_start = Position::new(event.root_x, event.root_y);
+                thumbnail.input_state.win_start = Position::new(geom.x, geom.y);
                 // Only allow dragging with right-click (button 3)
                 if event.detail == 3 {
                     thumbnail.input_state.dragging = true;
@@ -159,7 +158,7 @@ pub fn handle_event<'a>(
             {
                 // Left-click focuses the window (only if it wasn't dragged)
                 if event.detail == 1
-                    && thumbnail.input_state.drag_start == (event.root_x, event.root_y)
+                    && thumbnail.input_state.drag_start == Position::new(event.root_x, event.root_y)
                 {
                     thumbnail.focus()?;
                 }

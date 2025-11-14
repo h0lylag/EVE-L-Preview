@@ -8,6 +8,7 @@ use tracing::{error, info};
 use x11rb::protocol::render::Color;
 
 use crate::color::{HexColor, Opacity};
+use crate::types::Position;
 
 /// Immutable display settings (loaded once at startup)
 /// Can be borrowed by Thumbnails without RefCell
@@ -46,10 +47,10 @@ pub struct PersistentState {
     pub hide_when_no_focus: bool,
     
     // Mutable runtime state (persisted)
-    /// Character name → (x, y) position
+    /// Character name → position
     /// Persisted positions for each character's thumbnail
     #[serde(default)]
-    pub character_positions: HashMap<String, (i16, i16)>,
+    pub character_positions: HashMap<String, Position>,
     
     /// Snap threshold in pixels (0 = disabled)
     #[serde(default = "default_snap_threshold")]
@@ -161,7 +162,7 @@ impl PersistentState {
     pub fn update_position(&mut self, character_name: &str, x: i16, y: i16) -> Result<()> {
         if !character_name.is_empty() {
             info!("Saving position for character '{}': ({}, {})", character_name, x, y);
-            self.character_positions.insert(character_name.to_string(), (x, y));
+            self.character_positions.insert(character_name.to_string(), Position::new(x, y));
             self.save()?;
         }
         Ok(())
@@ -173,8 +174,8 @@ impl PersistentState {
         &mut self,
         old_name: &str,
         new_name: &str,
-        current_position: (i16, i16),
-    ) -> Result<Option<(i16, i16)>> {
+        current_position: Position,
+    ) -> Result<Option<Position>> {
         info!("Character change: '{}' → '{}'", old_name, new_name);
         
         // Save old position

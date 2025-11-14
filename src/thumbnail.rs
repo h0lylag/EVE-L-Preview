@@ -12,13 +12,14 @@ use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as WrapperExt;
 
 use crate::config::DisplayConfig;
+use crate::types::Position;
 use crate::x11_utils::{get_pictformat, to_fixed, AppContext};
 
 #[derive(Debug, Default)]
 pub struct InputState {
     pub dragging: bool,
-    pub drag_start: (i16, i16),
-    pub win_start: (i16, i16),
+    pub drag_start: Position,
+    pub win_start: Position,
 }
 
 #[derive(Debug)]
@@ -54,15 +55,15 @@ impl<'a> Thumbnail<'a> {
         character_name: String,
         src: Window,
         font: Font,
-        position: Option<(i16, i16)>,
+        position: Option<Position>,
     ) -> Result<Self> {
         let src_geom = ctx.conn.get_geometry(src)?.reply()?;
         
         // Use saved position OR center on source window
-        let (x, y) = position.unwrap_or_else(|| {
+        let Position { x, y } = position.unwrap_or_else(|| {
             let x = src_geom.x + (src_geom.width - ctx.config.width) as i16 / 2;
             let y = src_geom.y + (src_geom.height - ctx.config.height) as i16 / 2;
-            (x, y)
+            Position::new(x, y)
         });
 
         let window = ctx.conn.generate_id()?;
@@ -369,11 +370,11 @@ impl<'a> Thumbnail<'a> {
 
     /// Called when character name changes (login/logout)
     /// Updates name and optionally moves to new position
-    pub fn set_character_name(&mut self, new_name: String, new_position: Option<(i16, i16)>) -> Result<()> {
+    pub fn set_character_name(&mut self, new_name: String, new_position: Option<Position>) -> Result<()> {
         self.character_name = new_name;
         self.update_name()?;
         
-        if let Some((x, y)) = new_position {
+        if let Some(Position { x, y }) = new_position {
             self.reposition(x, y)?;
         }
         Ok(())
