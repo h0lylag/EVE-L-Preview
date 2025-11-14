@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+mod color;
 mod config;
 mod event_handler;
 mod persistence;

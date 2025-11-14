@@ -7,6 +7,8 @@ use std::path::PathBuf;
 use tracing::{error, info};
 use x11rb::protocol::render::Color;
 
+use crate::color::{HexColor, Opacity};
+
 /// Immutable display settings (loaded once at startup)
 /// Can be borrowed by Thumbnails without RefCell
 #[derive(Debug, Clone)]
@@ -83,29 +85,29 @@ impl PersistentState {
     /// Build DisplayConfig from current settings
     /// Returns a new DisplayConfig that can be used independently
     pub fn build_display_config(&self) -> DisplayConfig {
-        // Parse colors from hex strings
-        let border_color = Self::parse_hex_color(&self.border_color_hex)
-            .map(Self::u32_to_color)
+        // Parse colors from hex strings using color module
+        let border_color = HexColor::parse(&self.border_color_hex)
+            .map(|c| c.to_x11_color())
             .unwrap_or_else(|| {
                 error!("Invalid border_color hex, using default");
-                Self::u32_to_color(0x7FFF0000)
+                HexColor::from_argb32(0x7FFF0000).to_x11_color()
             });
         
-        let text_foreground = Self::parse_hex_color(&self.text_foreground_hex)
-            .map(Self::premultiply_argb32)
+        let text_foreground = HexColor::parse(&self.text_foreground_hex)
+            .map(|c| c.to_premultiplied_argb32())
             .unwrap_or_else(|| {
                 error!("Invalid text_foreground hex, using default");
-                Self::premultiply_argb32(0xFF_FF_FF_FF)
+                HexColor::from_argb32(0xFF_FF_FF_FF).to_premultiplied_argb32()
             });
         
-        let text_background = Self::parse_hex_color(&self.text_background_hex)
-            .map(Self::premultiply_argb32)
+        let text_background = HexColor::parse(&self.text_background_hex)
+            .map(|c| c.to_premultiplied_argb32())
             .unwrap_or_else(|| {
                 error!("Invalid text_background hex, using default");
-                Self::premultiply_argb32(0x7F_00_00_00)
+                HexColor::from_argb32(0x7F_00_00_00).to_premultiplied_argb32()
             });
         
-        let opacity = Self::percent_to_opacity(self.opacity_percent);
+        let opacity = Opacity::from_percent(self.opacity_percent).to_argb32();
         
         DisplayConfig {
             width: self.width,
@@ -120,7 +122,6 @@ impl PersistentState {
             hide_when_no_focus: self.hide_when_no_focus,
         }
     }
-
     pub fn load() -> Self {
         // Try to load existing config file
         let config_path = Self::config_path();
@@ -196,42 +197,6 @@ impl PersistentState {
         Ok(None)
     }
 
-    fn u32_to_color(raw: u32) -> Color {
-        let a = ((raw >> 24) & 0xFF) as u16;
-        let r = ((raw >> 16) & 0xFF) as u16;
-        let g = ((raw >> 8) & 0xFF) as u16;
-        let b = (raw & 0xFF) as u16;
-
-        let scale = |v: u16| (v as f32 / u8::MAX as f32 * u16::MAX as f32) as u16;
-
-        Color {
-            red: scale(r),
-            green: scale(g),
-            blue: scale(b),
-            alpha: scale(a),
-        }
-    }
-
-    fn parse_hex_color(hex: &str) -> Option<u32> {
-        let hex = hex.strip_prefix('#')?;
-        u32::from_str_radix(hex, 16).ok()
-    }
-
-    fn u32_to_hex_color(color: u32) -> String {
-        format!("#{:08X}", color)
-    }
-
-    fn percent_to_opacity(percent: u8) -> u32 {
-        let percent = percent.min(100);
-        let alpha = (percent as f32 / 100.0 * 255.0) as u32;
-        alpha << 24
-    }
-
-    fn opacity_to_percent(opacity: u32) -> u8 {
-        let alpha = (opacity >> 24) & 0xFF;
-        ((alpha as f32 / 255.0) * 100.0) as u8
-    }
-
     fn parse_num<T: std::str::FromStr + TryFrom<u128>>(var: &str) -> Option<T> where <T as TryFrom<u128>>::Error: std::fmt::Debug, <T as std::str::FromStr>::Err: std::fmt::Debug {
         if let Ok(s) = env::var(var) {
             let s = s.trim();
@@ -246,19 +211,6 @@ impl PersistentState {
         None
     }
 
-    fn premultiply_argb32(argb: u32) -> u32 {
-        let a = (argb >> 24) & 0xFF;
-        let r = (argb >> 16) & 0xFF;
-        let g = (argb >> 8) & 0xFF;
-        let b = argb & 0xFF;
-
-        let r_p = r * a / 255;
-        let g_p = g * a / 255;
-        let b_p = b * a / 255;
-
-        (a << 24) | (r_p << 16) | (g_p << 8) | b_p
-    }
-
     fn from_env() -> Self {
         let border_color_raw = Self::parse_num("BORDER_COLOR").unwrap_or(0x7FFF0000);
         let opacity = Self::parse_num("OPACITY").unwrap_or(0xC0000000);
@@ -268,13 +220,13 @@ impl PersistentState {
         Self {
             width: Self::parse_num("WIDTH").unwrap_or(240),
             height: Self::parse_num("HEIGHT").unwrap_or(135),
-            opacity_percent: Self::opacity_to_percent(opacity),
+            opacity_percent: Opacity::from_argb32(opacity).percent(),
             border_size: Self::parse_num("BORDER_SIZE").unwrap_or(5),
-            border_color_hex: Self::u32_to_hex_color(border_color_raw),
+            border_color_hex: HexColor::from_argb32(border_color_raw).to_hex_string(),
             text_x: Self::parse_num("TEXT_X").unwrap_or(10),
             text_y: Self::parse_num("TEXT_Y").unwrap_or(20),
-            text_foreground_hex: Self::u32_to_hex_color(text_fg_raw),
-            text_background_hex: Self::u32_to_hex_color(text_bg_raw),
+            text_foreground_hex: HexColor::from_argb32(text_fg_raw).to_hex_string(),
+            text_background_hex: HexColor::from_argb32(text_bg_raw).to_hex_string(),
             hide_when_no_focus: env::var("HIDE_WHEN_NO_FOCUS")
                 .map(|x| x.parse().unwrap_or(false))
                 .unwrap_or(false),
@@ -291,13 +243,13 @@ impl PersistentState {
             self.height = height;
         }
         if let Some(opacity) = Self::parse_num("OPACITY") {
-            self.opacity_percent = Self::opacity_to_percent(opacity);
+            self.opacity_percent = Opacity::from_argb32(opacity).percent();
         }
         if let Some(border_size) = Self::parse_num("BORDER_SIZE") {
             self.border_size = border_size;
         }
         if let Some(border_color_raw) = Self::parse_num("BORDER_COLOR") {
-            self.border_color_hex = Self::u32_to_hex_color(border_color_raw);
+            self.border_color_hex = HexColor::from_argb32(border_color_raw).to_hex_string();
         }
         if let Some(text_x) = Self::parse_num("TEXT_X") {
             self.text_x = text_x;
@@ -306,10 +258,10 @@ impl PersistentState {
             self.text_y = text_y;
         }
         if let Some(text_fg) = Self::parse_num("TEXT_FOREGROUND") {
-            self.text_foreground_hex = Self::u32_to_hex_color(text_fg);
+            self.text_foreground_hex = HexColor::from_argb32(text_fg).to_hex_string();
         }
         if let Some(text_bg) = Self::parse_num("TEXT_BACKGROUND") {
-            self.text_background_hex = Self::u32_to_hex_color(text_bg);
+            self.text_background_hex = HexColor::from_argb32(text_bg).to_hex_string();
         }
         if let Ok(hide) = env::var("HIDE_WHEN_NO_FOCUS") {
             self.hide_when_no_focus = hide.parse().unwrap_or(false);
