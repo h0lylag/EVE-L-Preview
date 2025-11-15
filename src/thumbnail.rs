@@ -26,29 +26,34 @@ pub struct InputState {
 
 #[derive(Debug)]
 pub struct Thumbnail<'a> {
-    pub window: Window,
-    pub dimensions: Dimensions,
-
-    config: &'a DisplayConfig,
-    font_renderer: &'a FontRenderer,
-    border_fill: Picture,
-
-    src_picture: Picture,
-    dst_picture: Picture,
-    overlay_gc: Gcontext,
-    overlay_pixmap: Pixmap,
-    overlay_picture: Picture,
-
+    // === Application State (public, frequently accessed) ===
     pub character_name: String,
     pub focused: bool,
     pub visible: bool,
     pub minimized: bool,
-
-    pub src: Window,
-    root: Window,
-    pub damage: Damage,
     pub input_state: InputState,
+    
+    // === Geometry (public, immutable after creation) ===
+    pub dimensions: Dimensions,
+    
+    // === X11 Window Handles (private/public owned resources) ===
+    pub window: Window,      // Our thumbnail window (public for event handling)
+    pub src: Window,         // Source EVE window (public for event handling)
+    pub damage: Damage,      // DAMAGE extension handle (public for event matching)
+    root: Window,            // Root window (private, cached from screen)
+    
+    // === X11 Render Resources (private, owned resources) ===
+    border_fill: Picture,    // Solid color fill for border
+    src_picture: Picture,    // Picture wrapping source window
+    dst_picture: Picture,    // Picture wrapping our thumbnail window
+    overlay_gc: Gcontext,    // Graphics context for text rendering
+    overlay_pixmap: Pixmap,  // Backing pixmap for overlay compositing
+    overlay_picture: Picture, // Picture wrapping overlay pixmap
+    
+    // === Borrowed Dependencies (private, references to app context) ===
     conn: &'a RustConnection,
+    config: &'a DisplayConfig,
+    font_renderer: &'a FontRenderer,
 }
 
 impl<'a> Thumbnail<'a> {
@@ -257,25 +262,34 @@ impl<'a> Thumbnail<'a> {
         let damage = Self::create_damage_tracking(ctx, src, &character_name)?;
 
         let thumbnail = Self {
+            // Application State
+            character_name,
+            focused: false,
+            visible: true,
+            minimized: false,
+            input_state: InputState::default(),
+            
+            // Geometry
             dimensions,
+            
+            // X11 Window Handles
             window,
-            config: ctx.config,
-            font_renderer,
+            src,
+            damage,
+            root: ctx.screen.root,
+            
+            // X11 Render Resources
             border_fill,
             src_picture,
             dst_picture,
             overlay_gc,
             overlay_pixmap,
             overlay_picture,
-            character_name,
-            focused: false,
-            visible: true,
-            minimized: false,
-            src,
-            root: ctx.screen.root,
-            damage,
-            input_state: InputState::default(),
+            
+            // Borrowed Dependencies
             conn: ctx.conn,
+            config: ctx.config,
+            font_renderer,
         };
         
         // Render initial name overlay
