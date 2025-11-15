@@ -1,18 +1,22 @@
-# eve-l-preview
+# EVE-L-Preview
 
 Rust reimplementation of my Python [EVE-L-Preview](https://github.com/h0lylag/Py-EVE-L_Preview) project. This is basically a Linux clone of the EVE-O Preview tool that Windows players use to manage multiple EVE clients.
 
 Big thanks to [ilveth](https://github.com/ilveth/eve-l-preview) for figuring out the X11 window thumbnail rendering that I was stuck on. Their implementation got me unstuck and made this project possible.
 
+## Status
+
+This is still under development and should be working. But keep in mind it's primarily designed around my own workflow and environment.
+
 ## What it does
 
 Creates small preview windows for each EVE client you have running. Each preview shows what's happening in the actual game window in real-time. Click a preview to focus that client, drag them around to organize your screen, and use Tab/Shift+Tab to quickly cycle between characters.
 
-Works great on Wayland as long as you're running EVE through Wine/Proton in XWayland mode (which is the default).
+Works on Wayland as long as you're running EVE through Wine/Proton in XWayland mode.
 
 ## Features
 
-- Real-time thumbnails of each EVE client window
+- Truly live, real-time thumbnails of each EVE client window. No screenshotting workarounds.
 - Click a preview to switch to that client
 - Drag previews around to organize them however you want
 - Tab/Shift+Tab hotkeys for quick character switching
@@ -31,10 +35,10 @@ The config file lives at `~/.config/eve-l-preview/eve-l-preview.toml` and gets c
 
 ```toml
 # How see-through the previews are (0-100)
-opacity_percent = 75
+opacity_percent = 80
 
 # Border around the active client's preview
-border_size = 3
+border_size = 5
 border_color = "#7FFF0000"  # Red with 50% transparency
 
 # Character name positioning and color
