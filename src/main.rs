@@ -230,24 +230,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
         // Check for hotkey commands (non-blocking)
         if let Ok(command) = hotkey_rx.try_recv() {
-            info!("Received hotkey command: {:?}", command);
-            let result = match command {
-                CycleCommand::Forward => cycle_state.cycle_forward(),
-                CycleCommand::Backward => cycle_state.cycle_backward(),
+            // Check if we should only allow hotkeys when EVE window is focused
+            let should_process = if persistent_state.global.hotkey_require_eve_focus {
+                x11_utils::is_eve_window_focused(&conn, screen, &atoms)
+                    .inspect_err(|e| error!("Failed to check focused window: {}", e))
+                    .unwrap_or(false)
+            } else {
+                true
             };
-
-            if let Some((window, character_name)) = result {
-                let display_name = if character_name.is_empty() {
-                    "login_screen"
-                } else {
-                    &character_name
+            
+            if should_process {
+                info!("Received hotkey command: {:?}", command);
+                let result = match command {
+                    CycleCommand::Forward => cycle_state.cycle_forward(),
+                    CycleCommand::Backward => cycle_state.cycle_backward(),
                 };
-                info!("Activating window {} (character: '{}')", window, display_name);
-                if let Err(e) = activate_window(&conn, screen, &atoms, window) {
-                    error!("Failed to activate window: {}", e);
+
+                if let Some((window, character_name)) = result {
+                    let display_name = if character_name.is_empty() {
+                        "login_screen"
+                    } else {
+                        &character_name
+                    };
+                    info!("Activating window {} (character: '{}')", window, display_name);
+                    if let Err(e) = activate_window(&conn, screen, &atoms, window) {
+                        error!("Failed to activate window: {}", e);
+                    }
+                } else {
+                    warn!("No window to activate from cycle state");
                 }
             } else {
-                warn!("No window to activate from cycle state");
+                info!("Hotkey ignored - EVE window not focused (hotkey_require_eve_focus=true)");
             }
         }
 

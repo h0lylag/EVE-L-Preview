@@ -88,6 +88,29 @@ pub fn is_window_eve(conn: &RustConnection, window: Window, atoms: &CachedAtoms)
     })
 }
 
+/// Check if the currently focused window is an EVE client
+pub fn is_eve_window_focused(conn: &RustConnection, screen: &Screen, atoms: &CachedAtoms) -> Result<bool> {
+    // Get the currently active window
+    let active_window_prop = conn
+        .get_property(
+            false,
+            screen.root,
+            atoms.net_active_window,
+            AtomEnum::WINDOW,
+            0,
+            1,
+        )?
+        .reply()?;
+    
+    if active_window_prop.value.len() >= 4 {
+        let active_window = u32::from_ne_bytes(active_window_prop.value[0..4].try_into()?);
+        // Check if this window is an EVE client
+        Ok(is_window_eve(conn, active_window, atoms)?.is_some())
+    } else {
+        Ok(false)
+    }
+}
+
 /// Activate (focus) an X11 window using _NET_ACTIVE_WINDOW
 pub fn activate_window(
     conn: &RustConnection,

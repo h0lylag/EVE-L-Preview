@@ -73,6 +73,10 @@ pub struct GlobalSettings {
     /// Characters are auto-added when first seen, but can be manually ordered
     #[serde(default)]
     pub hotkey_order: Vec<String>,
+    
+    /// Only allow hotkey cycling when an EVE window is focused
+    #[serde(default = "default_hotkey_require_eve_focus")]
+    pub hotkey_require_eve_focus: bool,
 }
 
 fn default_text_size() -> f32 {
@@ -123,6 +127,10 @@ fn default_width() -> u16 {
 
 fn default_height() -> u16 {
     141
+}
+
+fn default_hotkey_require_eve_focus() -> bool {
+    true
 }
 
 fn serialize_color<S>(hex: &String, serializer: S) -> Result<S::Ok, S::Error>
@@ -351,6 +359,7 @@ impl PersistentState {
                     "Alt 1".to_string(),
                     "Alt 2".to_string(),
                 ],
+                hotkey_require_eve_focus: true,
             },
             character_positions: HashMap::new(),
         }
@@ -410,6 +419,7 @@ mod tests {
             default_width: 250,
             default_height: 141,
             hotkey_order: Vec::new(),
+            hotkey_require_eve_focus: true,
         }
     }
 
