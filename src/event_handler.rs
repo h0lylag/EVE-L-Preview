@@ -44,9 +44,8 @@ fn handle_drag_motion(
         snap_threshold,
     ).unwrap_or_else(|| Position::new(new_x, new_y));
 
-    if final_x != thumbnail.x || final_y != thumbnail.y {
-        thumbnail.reposition(final_x, final_y)?;
-    }
+    // Always reposition (let X11 handle no-op if position unchanged)
+    thumbnail.reposition(final_x, final_y)?;
 
     Ok(())
 }
@@ -89,7 +88,10 @@ pub fn handle_event<'a>(
             {
                 // Character name changed (login/logout/character switch)
                 let old_name = thumbnail.character_name.clone();
-                let current_pos = Position::new(thumbnail.x, thumbnail.y);
+                
+                // Query actual position from X11
+                let geom = ctx.conn.get_geometry(thumbnail.window)?.reply()?;
+                let current_pos = Position::new(geom.x, geom.y);
                 
                 // Update cycle state with new character name
                 cycle_state.update_character(event.window, new_character_name.clone());
@@ -180,13 +182,16 @@ pub fn handle_event<'a>(
                 
                 // Save position after drag ends (right-click release)
                 if thumbnail.input_state.dragging {
+                    // Query actual position from X11
+                    let geom = ctx.conn.get_geometry(thumbnail.window)?.reply()?;
+                    
                     // Update session state
-                    session_state.update_window_position(thumbnail.window, thumbnail.x, thumbnail.y);
+                    session_state.update_window_position(thumbnail.window, geom.x, geom.y);
                     // Persist character position AND dimensions
                     persistent_state.update_position(
                         &thumbnail.character_name,
-                        thumbnail.x,
-                        thumbnail.y,
+                        geom.x,
+                        geom.y,
                         thumbnail.width,
                         thumbnail.height,
                     )?;
@@ -196,16 +201,20 @@ pub fn handle_event<'a>(
             }
         }
         Event::MotionNotify(event) => {
-            // Build list of other thumbnails for snapping (immutable pass)
+            // Build list of other thumbnails for snapping (query actual positions)
             let others: Vec<_> = eves
                 .iter()
                 .filter(|(_, t)| !t.input_state.dragging && t.visible)
-                .map(|(win, t)| (*win, Rect {
-                    x: t.x,
-                    y: t.y,
-                    width: t.width,
-                    height: t.height,
-                }))
+                .filter_map(|(win, t)| {
+                    ctx.conn.get_geometry(t.window).ok()
+                        .and_then(|req| req.reply().ok())
+                        .map(|geom| (*win, Rect {
+                            x: geom.x,
+                            y: geom.y,
+                            width: t.width,
+                            height: t.height,
+                        }))
+                })
                 .collect();
             
             let snap_threshold = persistent_state.global.snap_threshold;

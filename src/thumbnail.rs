@@ -26,8 +26,6 @@ pub struct InputState {
 #[derive(Debug)]
 pub struct Thumbnail<'a> {
     pub window: Window,
-    pub x: i16,
-    pub y: i16,
     pub width: u16,
     pub height: u16,
 
@@ -160,8 +158,6 @@ impl<'a> Thumbnail<'a> {
         ctx.conn.damage_create(damage, src, DamageReportLevel::RAW_RECTANGLES)?;
 
         let mut _self = Self {
-            x,
-            y,
             width,
             height,
             window,
@@ -437,8 +433,6 @@ impl<'a> Thumbnail<'a> {
             &ConfigureWindowAux::new().x(x as i32).y(y as i32),
         )?;
         self.conn.flush()?;
-        self.x = x;
-        self.y = y;
         Ok(())
     }
 
@@ -455,10 +449,16 @@ impl<'a> Thumbnail<'a> {
     }
 
     pub fn is_hovered(&self, x: i16, y: i16) -> bool {
-        x >= self.x
-            && x <= self.x + self.width as i16
-            && y >= self.y
-            && y <= self.y + self.height as i16
+        // Query actual window geometry to avoid desync when compositor moves window
+        if let Ok(req) = self.conn.get_geometry(self.window)
+            && let Ok(geom) = req.reply()
+        {
+            return x >= geom.x
+                && x <= geom.x + geom.width as i16
+                && y >= geom.y
+                && y <= geom.y + geom.height as i16;
+        }
+        false
     }
 }
 
