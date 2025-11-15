@@ -2,7 +2,7 @@
 
 Rust reimplementation of my Python [EVE-L-Preview](https://github.com/h0lylag/Py-EVE-L_Preview) project. This is basically a Linux clone of the EVE-O Preview tool that Windows players use to manage multiple EVE clients.
 
-Big thanks to [ilveth](https://github.com/ilveth/eve-l-preview) for figuring out the X11 window thumbnail rendering that I was stuck on. Their implementation got me unstuck and made this project possible.
+Big thanks to [ilveth](https://github.com/ilveth/eve-l-preview) for figuring out the X11 window thumbnail rendering that I was stuck on. Their implementation got me unstuck and made my version of this project possible.
 
 ## Status
 
