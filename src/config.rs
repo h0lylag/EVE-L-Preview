@@ -149,8 +149,8 @@ where
 impl PersistentState {
     fn config_path() -> PathBuf {
         let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-        path.push("eve-l-preview");
-        path.push("eve-l-preview.toml");
+        path.push(crate::constants::config::APP_DIR);
+        path.push(crate::constants::config::FILENAME);
         path
     }
 

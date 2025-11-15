@@ -12,6 +12,7 @@ use crate::persistence::SavedState;
 use crate::snapping::{self, Rect};
 use crate::thumbnail::Thumbnail;
 use crate::types::Position;
+use crate::types::EveWindowType;
 use crate::x11_utils::{is_window_eve, AppContext};
 
 /// Handle drag motion for a single thumbnail with snapping
@@ -89,11 +90,12 @@ pub fn handle_event<'a>(
         PropertyNotify(event) => {
             if event.atom == ctx.atoms.wm_name
                 && let Some(thumbnail) = eves.get_mut(&event.window)
-                && let Some(new_character_name) = is_window_eve(ctx.conn, event.window, ctx.atoms)
+                && let Some(eve_window) = is_window_eve(ctx.conn, event.window, ctx.atoms)
                     .context(format!("Failed to check if window {} is EVE client during property change", event.window))?
             {
                 // Character name changed (login/logout/character switch)
                 let old_name = thumbnail.character_name.clone();
+                let new_character_name = eve_window.character_name();
                 
                 // Query actual position from X11
                 let geom = ctx.conn.get_geometry(thumbnail.window)
@@ -103,7 +105,7 @@ pub fn handle_event<'a>(
                 let current_pos = Position::new(geom.x, geom.y);
                 
                 // Update cycle state with new character name
-                cycle_state.update_character(event.window, new_character_name.clone());
+                cycle_state.update_character(event.window, new_character_name.to_string());
                 
                 // Ask persistent state what to do - pass current dimensions to ensure they're saved
                 let new_position = persistent_state.handle_character_change(
@@ -119,7 +121,7 @@ pub fn handle_event<'a>(
                 session_state.update_window_position(event.window, current_pos.x, current_pos.y);
                 
                 // Update thumbnail (may move to new position)
-                thumbnail.set_character_name(new_character_name, new_position)
+                thumbnail.set_character_name(new_character_name.to_string(), new_position)
                     .context(format!("Failed to update thumbnail after character change from '{}'", old_name))?;
                 
             } else if event.atom == ctx.atoms.wm_name

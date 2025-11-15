@@ -61,6 +61,9 @@ pub mod eve {
     
     /// Window title for logged-out EVE clients
     pub const LOGGED_OUT_TITLE: &str = "EVE";
+    
+    /// Display name for logged-out character (shown in logs)
+    pub const LOGGED_OUT_DISPLAY_NAME: &str = "login_screen";
 }
 
 /// Default window positioning constants
@@ -76,4 +79,61 @@ pub mod fixed_point {
     
     /// Fixed-point multiplier for conversion (2^16)
     pub const MULTIPLIER: f32 = 65536.0;
+}
+
+/// System paths
+pub mod paths {
+    /// Linux proc filesystem path format for process executables
+    pub const PROC_EXE_FORMAT: &str = "/proc/{}/exe";
+    
+    /// Input device directory
+    pub const DEV_INPUT: &str = "/dev/input";
+}
+
+/// User group permissions
+pub mod permissions {
+    /// Linux group name for input device access
+    pub const INPUT_GROUP: &str = "input";
+    
+    /// Command to add user to input group
+    pub const ADD_TO_INPUT_GROUP: &str = "sudo usermod -a -G input $USER";
+}
+
+/// Log level strings
+pub mod logging {
+    /// Default log level
+    pub const DEFAULT_LEVEL: &str = "info";
+    
+    /// Trace log level string
+    pub const TRACE: &str = "trace";
+    
+    /// Debug log level string
+    pub const DEBUG: &str = "debug";
+    
+    /// Info log level string
+    pub const INFO: &str = "info";
+    
+    /// Warn log level string
+    pub const WARN: &str = "warn";
+    
+    /// Error log level string
+    pub const ERROR: &str = "error";
+}
+
+/// Configuration paths and filenames
+pub mod config {
+    /// Application directory name under XDG config
+    pub const APP_DIR: &str = "eve-l-preview";
+    
+    /// Configuration filename
+    pub const FILENAME: &str = "eve-l-preview.toml";
+}
+
+/// Environment variables
+pub mod env {
+    /// Environment variable for log level override
+    pub const LOG_LEVEL: &str = "LOG_LEVEL";
+    
+    /// Environment variable for custom font path (set at build time)
+    pub const FONT_PATH: &str = "FONT_PATH";
 }

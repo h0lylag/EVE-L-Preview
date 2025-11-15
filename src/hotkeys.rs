@@ -4,7 +4,7 @@ use std::sync::mpsc::Sender;
 use std::thread;
 use tracing::{debug, error, info, warn};
 
-use crate::constants::input;
+use crate::constants::{input, paths, permissions};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CycleCommand {
@@ -14,12 +14,12 @@ pub enum CycleCommand {
 
 /// Find all keyboard devices that support Tab key
 fn find_all_keyboard_devices() -> Result<Vec<Device>> {
-    info!("Scanning /dev/input for keyboard devices...");
+    info!("Scanning {} for keyboard devices...", paths::DEV_INPUT);
     
     let mut devices = Vec::new();
     
-    for entry in std::fs::read_dir("/dev/input")
-        .context("Failed to read /dev/input - are you in the 'input' group?")?
+    for entry in std::fs::read_dir(paths::DEV_INPUT)
+        .context(format!("Failed to read {} - are you in the '{}' group?", paths::DEV_INPUT, permissions::INPUT_GROUP))?
     {
         let entry = entry?;
         let path = entry.path();
@@ -40,9 +40,11 @@ fn find_all_keyboard_devices() -> Result<Vec<Device>> {
 
     if devices.is_empty() {
         anyhow::bail!(
-            "No keyboard device found. Ensure you're in 'input' group:\n\
-             sudo usermod -a -G input $USER\n\
-             Then log out and back in."
+            "No keyboard device found. Ensure you're in '{}' group:\n\
+             {}\n\
+             Then log out and back in.",
+            permissions::INPUT_GROUP,
+            permissions::ADD_TO_INPUT_GROUP
         )
     }
 
@@ -125,14 +127,14 @@ fn listen_for_hotkeys(mut device: Device, sender: Sender<CycleCommand>) -> Resul
 
 /// Check if hotkeys are available (user has input group permissions)
 pub fn check_permissions() -> bool {
-    std::fs::read_dir("/dev/input").is_ok()
+    std::fs::read_dir(paths::DEV_INPUT).is_ok()
 }
 
 /// Print helpful error message if permissions missing
 pub fn print_permission_error() {
-    error!("Cannot access /dev/input devices");
-    error!("Hotkeys require 'input' group membership:");
-    error!("  sudo usermod -a -G input $USER");
+    error!("Cannot access {} devices", paths::DEV_INPUT);
+    error!("Hotkeys require '{}' group membership:", permissions::INPUT_GROUP);
+    error!("  {}", permissions::ADD_TO_INPUT_GROUP);
     error!("  Then log out and back in");
     warn!("Continuing without hotkey support...");
 }

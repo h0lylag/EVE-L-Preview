@@ -23,13 +23,13 @@ use x11rb::protocol::damage::ConnectionExt as DamageExt;
 use x11rb::protocol::xproto::*;
 
 use config::PersistentState;
-use constants::wine;
+use constants::{eve, logging, paths, wine};
 use cycle_state::CycleState;
 use event_handler::handle_event;
 use hotkeys::{spawn_listener, CycleCommand};
 use persistence::SavedState;
 use thumbnail::Thumbnail;
-use types::Dimensions;
+use types::{Dimensions, EveWindowType};
 use x11_utils::{activate_window, is_window_eve, AppContext, CachedAtoms};
 
 fn check_and_create_window<'a>(
@@ -51,7 +51,7 @@ fn check_and_create_window<'a>(
         if !prop.value.is_empty() {
             let pid = u32::from_ne_bytes(prop.value[0..constants::x11::PID_PROPERTY_SIZE].try_into()
                 .context("Invalid PID property format (expected 4 bytes)")?);
-            if !std::fs::read_link(format!("/proc/{pid}/exe"))
+            if !std::fs::read_link(format!("{}", paths::PROC_EXE_FORMAT.replace("{}", &pid.to_string())))
                 .map(|x| {
                     x.to_string_lossy().contains(wine::WINE64_PRELOADER)
                         || x.to_string_lossy().contains(wine::WINE_PRELOADER)
@@ -74,8 +74,10 @@ fn check_and_create_window<'a>(
     )
     .context(format!("Failed to set event mask for window {}", window))?;
 
-    if let Some(character_name) = is_window_eve(ctx.conn, window, ctx.atoms)
+    if let Some(eve_window) = is_window_eve(ctx.conn, window, ctx.atoms)
         .context(format!("Failed to check if window {} is EVE client", window))? {
+        let character_name = eve_window.character_name().to_string();
+        
         ctx.conn.change_window_attributes(
             window,
             &ChangeWindowAttributesAux::new()
@@ -157,15 +159,15 @@ fn get_eves<'a>(
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parse log level from environment variable
-    let log_level = match std::env::var("LOG_LEVEL")
-        .unwrap_or_else(|_| "info".to_string())
+    let log_level = match std::env::var(constants::env::LOG_LEVEL)
+        .unwrap_or_else(|_| logging::DEFAULT_LEVEL.to_string())
         .to_lowercase()
         .as_str()
     {
-        "trace" => TraceLevel::TRACE,
-        "debug" => TraceLevel::DEBUG,
-        "warn" => TraceLevel::WARN,
-        "error" => TraceLevel::ERROR,
+        logging::TRACE => TraceLevel::TRACE,
+        logging::DEBUG => TraceLevel::DEBUG,
+        logging::WARN => TraceLevel::WARN,
+        logging::ERROR => TraceLevel::ERROR,
         _ => TraceLevel::INFO,
     };
     
@@ -277,7 +279,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 if let Some((window, character_name)) = result {
                     let display_name = if character_name.is_empty() {
-                        "login_screen"
+                        eve::LOGGED_OUT_DISPLAY_NAME
                     } else {
                         &character_name
                     };

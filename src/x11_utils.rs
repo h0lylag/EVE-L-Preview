@@ -9,6 +9,7 @@ use x11rb::wrapper::ConnectionExt as WrapperExt;
 use crate::config::DisplayConfig;
 use crate::constants::{eve, fixed_point, x11};
 use crate::font::FontRenderer;
+use crate::types::EveWindowType;
 
 /// Application context holding immutable shared state
 pub struct AppContext<'a> {
@@ -97,7 +98,7 @@ pub fn get_pictformat(conn: &RustConnection, depth: u8, alpha: bool) -> Result<P
     }
 }
 
-pub fn is_window_eve(conn: &RustConnection, window: Window, atoms: &CachedAtoms) -> Result<Option<String>> {
+pub fn is_window_eve(conn: &RustConnection, window: Window, atoms: &CachedAtoms) -> Result<Option<EveWindowType>> {
     let name_prop = conn
         .get_property(false, window, atoms.wm_name, AtomEnum::STRING, 0, 1024)
         .context(format!("Failed to query WM_NAME property for window {}", window))?
@@ -105,9 +106,9 @@ pub fn is_window_eve(conn: &RustConnection, window: Window, atoms: &CachedAtoms)
         .context(format!("Failed to get WM_NAME reply for window {}", window))?;
     let title = String::from_utf8_lossy(&name_prop.value).into_owned();
     Ok(if let Some(name) = title.strip_prefix(eve::WINDOW_TITLE_PREFIX) {
-        Some(name.to_string())
+        Some(EveWindowType::LoggedIn(name.to_string()))
     } else if title == eve::LOGGED_OUT_TITLE {
-        Some(String::new())
+        Some(EveWindowType::LoggedOut)
     } else {
         None
     })
