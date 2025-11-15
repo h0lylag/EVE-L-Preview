@@ -1,5 +1,5 @@
 use anyhow::Result;
-use tracing::info;
+use tracing::{error, info};
 use x11rb::connection::Connection;
 use x11rb::protocol::damage::{
     ConnectionExt as DamageExt, Damage, ReportLevel as DamageReportLevel,
@@ -65,12 +65,12 @@ impl<'a> Thumbnail<'a> {
     ) -> Result<Self> {
         let src_geom = ctx.conn.get_geometry(src)?.reply()?;
         
-        // Use saved position OR center on source window
+        // Use saved position OR top-left of EVE window with 20px padding
         let Position { x, y } = position.unwrap_or_else(|| {
-            let x = src_geom.x + (src_geom.width - width) as i16 / 2;
-            let y = src_geom.y + (src_geom.height - height) as i16 / 2;
-            Position::new(x, y)
+            Position::new(src_geom.x + 20, src_geom.y + 20)
         });
+        info!("Creating thumbnail for '{}' at position ({}, {}) with size {}x{}", 
+              character_name, x, y, width, height);
 
         let window = ctx.conn.generate_id()?;
         ctx.conn.create_window(
@@ -125,7 +125,9 @@ impl<'a> Thumbnail<'a> {
             &[above_atom],
         )?;
 
-        ctx.conn.map_window(window)?;
+        ctx.conn.map_window(window)
+            .inspect_err(|e| error!("Failed to map thumbnail window {}: {:?}", window, e))?;
+        info!("Mapped thumbnail window {} for '{}'", window, character_name);
 
         let border_fill = ctx.conn.generate_id()?;
         ctx.conn.render_create_solid_fill(border_fill, ctx.config.border_color)?;
