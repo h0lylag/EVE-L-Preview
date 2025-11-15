@@ -2,6 +2,30 @@
 
 use serde::{Deserialize, Serialize};
 
+/// EVE Online window type classification
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EveWindowType {
+    /// Logged-in EVE client with character name
+    LoggedIn(String),
+    /// Logged-out EVE client (character select screen)
+    LoggedOut,
+}
+
+impl EveWindowType {
+    /// Get the character name, or empty string if logged out
+    pub fn character_name(&self) -> &str {
+        match self {
+            EveWindowType::LoggedIn(name) => name,
+            EveWindowType::LoggedOut => "",
+        }
+    }
+    
+    /// Check if this window is logged in (has a character)
+    pub fn is_logged_in(&self) -> bool {
+        matches!(self, EveWindowType::LoggedIn(_))
+    }
+}
+
 /// A position in 2D space (X11 coordinates)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub struct Position {
@@ -114,25 +138,27 @@ impl TextOffset {
 pub struct CharacterSettings {
     pub x: i16,
     pub y: i16,
-    /// Thumbnail width (0 = use auto-detect)
-    #[serde(default)]
-    pub width: u16,
-    /// Thumbnail height (0 = use auto-detect)
-    #[serde(default)]
-    pub height: u16,
+    /// Thumbnail dimensions (0 = use auto-detect)
+    #[serde(flatten)]
+    pub dimensions: Dimensions,
 }
 
 impl CharacterSettings {
     pub fn new(x: i16, y: i16, width: u16, height: u16) -> Self {
-        Self { x, y, width, height }
+        Self { 
+            x, 
+            y, 
+            dimensions: Dimensions::new(width, height),
+        }
     }
     
     pub fn position(&self) -> Position {
         Position::new(self.x, self.y)
     }
     
-    pub fn dimensions(&self) -> (u16, u16) {
-        (self.width, self.height)
+    /// Get dimensions directly
+    pub fn get_dimensions(&self) -> Dimensions {
+        self.dimensions
     }
 }
 

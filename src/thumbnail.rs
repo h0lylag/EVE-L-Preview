@@ -425,8 +425,8 @@ impl<'a> Thumbnail<'a> {
                 0,
                 0,
                 0,
-                self.config.text_x,
-                self.config.text_y,
+                self.config.text_offset.x,
+                self.config.text_offset.y,
                 rendered.width as u16,
                 rendered.height as u16,
             )

@@ -87,25 +87,25 @@ fn check_and_create_window<'a>(
         let position = state.get_position(&character_name, window, &persistent_state.character_positions);
         
         // Get dimensions from CharacterSettings or use auto-detected defaults
-        let (width, height) = if let Some(settings) = persistent_state.character_positions.get(&character_name) {
-            let (w, h) = settings.dimensions();
+        let dimensions = if let Some(settings) = persistent_state.character_positions.get(&character_name) {
             // If dimensions are 0 (not yet saved), auto-detect
-            if w == 0 || h == 0 {
-                persistent_state.default_thumbnail_size(
+            if settings.dimensions.width == 0 || settings.dimensions.height == 0 {
+                let (w, h) = persistent_state.default_thumbnail_size(
                     ctx.screen.width_in_pixels,
                     ctx.screen.height_in_pixels,
-                )
+                );
+                Dimensions::new(w, h)
             } else {
-                (w, h)
+                settings.dimensions
             }
         } else {
             // Character not in settings yet - auto-detect
-            persistent_state.default_thumbnail_size(
+            let (w, h) = persistent_state.default_thumbnail_size(
                 ctx.screen.width_in_pixels,
                 ctx.screen.height_in_pixels,
-            )
+            );
+            Dimensions::new(w, h)
         };
-        let dimensions = Dimensions::new(width, height);
         
         let thumbnail = Thumbnail::new(ctx, character_name.clone(), window, ctx.font_renderer, position, dimensions)
             .context(format!("Failed to create thumbnail for '{}' (window {})", character_name, window))?;

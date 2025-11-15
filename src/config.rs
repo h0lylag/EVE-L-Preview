@@ -8,7 +8,7 @@ use tracing::{error, info};
 use x11rb::protocol::render::Color;
 
 use crate::color::{HexColor, Opacity};
-use crate::types::{CharacterSettings, Position};
+use crate::types::{CharacterSettings, Position, TextOffset};
 
 /// Immutable display settings (loaded once at startup)
 /// Can be borrowed by Thumbnails without RefCell
@@ -19,8 +19,7 @@ pub struct DisplayConfig {
     pub opacity: u32,
     pub border_size: u16,
     pub border_color: Color,
-    pub text_x: i16,
-    pub text_y: i16,
+    pub text_offset: TextOffset,
     pub text_foreground: u32,
     pub hide_when_no_focus: bool,
 }
@@ -195,8 +194,7 @@ impl PersistentState {
             opacity,
             border_size: self.global.border_size,
             border_color,
-            text_x: self.global.text_x,
-            text_y: self.global.text_y,
+            text_offset: TextOffset::from_border_edge(self.global.text_x, self.global.text_y),
             text_foreground,
             hide_when_no_focus: self.global.hide_when_no_focus,
         }
@@ -448,8 +446,8 @@ mod tests {
 
         let config = state.build_display_config();
         assert_eq!(config.border_size, 3);
-        assert_eq!(config.text_x, 15);
-        assert_eq!(config.text_y, 25);
+        assert_eq!(config.text_offset.x, 15);
+        assert_eq!(config.text_offset.y, 25);
         assert_eq!(config.hide_when_no_focus, true);
         
         // Opacity: 75% → 0xBF
@@ -505,8 +503,8 @@ mod tests {
         let settings = state.character_positions.get("TestChar").unwrap();
         assert_eq!(settings.x, 100);
         assert_eq!(settings.y, 200);
-        assert_eq!(settings.width, 480);
-        assert_eq!(settings.height, 270);
+        assert_eq!(settings.dimensions.width, 480);
+        assert_eq!(settings.dimensions.height, 270);
     }
 
     #[test]
@@ -541,8 +539,8 @@ mod tests {
         let old_settings = state.character_positions.get("OldChar").unwrap();
         assert_eq!(old_settings.x, 100);
         assert_eq!(old_settings.y, 200);
-        assert_eq!(old_settings.width, 480);
-        assert_eq!(old_settings.height, 270);
+        assert_eq!(old_settings.dimensions.width, 480);
+        assert_eq!(old_settings.dimensions.height, 270);
         
         // File save will fail in test, so we just verify the position was looked up
         // The function returns Err because save() fails, not because logic is wrong
@@ -570,8 +568,8 @@ mod tests {
         let settings = state.character_positions.get("LoggingOut").unwrap();
         assert_eq!(settings.x, 300);
         assert_eq!(settings.y, 400);
-        assert_eq!(settings.width, 480);
-        assert_eq!(settings.height, 270);
+        assert_eq!(settings.dimensions.width, 480);
+        assert_eq!(settings.dimensions.height, 270);
         
         // File save will fail in test environment
         assert!(result.is_err());
