@@ -2,7 +2,9 @@
 
 mod color;
 mod config;
+mod cycle_state;
 mod event_handler;
+mod hotkeys;
 mod persistence;
 mod snapping;
 mod thumbnail;
@@ -11,6 +13,7 @@ mod x11_utils;
 
 use anyhow::Result;
 use std::collections::HashMap;
+use std::sync::mpsc;
 use tracing::{error, info, warn, Level as TraceLevel};
 use tracing_subscriber::FmtSubscriber;
 use x11rb::connection::Connection;
@@ -18,10 +21,12 @@ use x11rb::protocol::damage::ConnectionExt as DamageExt;
 use x11rb::protocol::xproto::*;
 
 use config::PersistentState;
+use cycle_state::CycleState;
 use event_handler::handle_event;
+use hotkeys::{spawn_listener, CycleCommand};
 use persistence::SavedState;
 use thumbnail::Thumbnail;
-use x11_utils::{is_window_eve, AppContext, CachedAtoms};
+use x11_utils::{activate_window, is_window_eve, AppContext, CachedAtoms};
 
 fn check_and_create_window<'a>(
     ctx: &AppContext<'a>,
@@ -167,6 +172,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut session_state = SavedState::new();
     info!("loaded {} character positions from config", persistent_state.character_positions.len());
     
+    // Initialize cycle state from config
+    let mut cycle_state = CycleState::new(persistent_state.global.hotkey_order.clone());
+    
+    // Create channel for hotkey thread → main loop
+    let (hotkey_tx, hotkey_rx) = mpsc::channel();
+    
+    // Spawn hotkey listener (optional - skip if permissions denied)
+    let _hotkey_handle = if hotkeys::check_permissions() {
+        match spawn_listener(hotkey_tx) {
+            Ok(handle) => {
+                info!("Hotkey support enabled (Tab/Shift+Tab)");
+                Some(handle)
+            }
+            Err(e) => {
+                error!("Failed to start hotkey listener: {}", e);
+                hotkeys::print_permission_error();
+                None
+            }
+        }
+    } else {
+        hotkeys::print_permission_error();
+        None
+    };
+    
     // Pre-cache atoms once at startup (eliminates roundtrip overhead)
     let atoms = CachedAtoms::new(&conn)?;
     
@@ -189,7 +218,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let mut eves = get_eves(&ctx, &persistent_state, &session_state)?;
+    
+    // Register initial windows with cycle state
+    for (window, thumbnail) in eves.iter() {
+        cycle_state.add_window(thumbnail.character_name.clone(), *window);
+    }
+    
     loop {
+        // Check for hotkey commands (non-blocking)
+        if let Ok(command) = hotkey_rx.try_recv() {
+            info!("Received hotkey command: {:?}", command);
+            let window = match command {
+                CycleCommand::Forward => cycle_state.cycle_forward(),
+                CycleCommand::Backward => cycle_state.cycle_backward(),
+            };
+
+            if let Some(window) = window {
+                info!("Activating window: {}", window);
+                if let Err(e) = activate_window(&conn, screen, &atoms, window) {
+                    error!("Failed to activate window: {}", e);
+                }
+            } else {
+                warn!("No window to activate from cycle state");
+            }
+        }
+
         let event = conn.wait_for_event()?;
         let _ = handle_event(
             &ctx,
@@ -197,6 +250,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &mut eves,
             event,
             &mut session_state,
+            &mut cycle_state,
             check_and_create_window
         ).inspect_err(|err| error!("ecountered error in 'handle_event': err={err:#?}"));
     }

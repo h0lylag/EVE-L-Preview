@@ -6,6 +6,7 @@ use x11rb::protocol::Event::{self, CreateNotify, DamageNotify, DestroyNotify, Pr
 use x11rb::protocol::xproto::*;
 
 use crate::config::PersistentState;
+use crate::cycle_state::CycleState;
 use crate::persistence::SavedState;
 use crate::snapping::{self, Rect};
 use crate::thumbnail::Thumbnail;
@@ -56,6 +57,7 @@ pub fn handle_event<'a>(
     eves: &mut HashMap<Window, Thumbnail<'a>>,
     event: Event,
     session_state: &mut SavedState,
+    cycle_state: &mut CycleState,
     check_and_create_window: impl Fn(&AppContext<'a>, &PersistentState, Window, &SavedState) -> Result<Option<Thumbnail<'a>>>,
 ) -> Result<()> {
     match event {
@@ -71,10 +73,13 @@ pub fn handle_event<'a>(
         }
         CreateNotify(event) => {
             if let Some(thumbnail) = check_and_create_window(ctx, persistent_state, event.window, session_state)? {
+                // Register with cycle state
+                cycle_state.add_window(thumbnail.character_name.clone(), event.window);
                 eves.insert(event.window, thumbnail);
             }
         }
         DestroyNotify(event) => {
+            cycle_state.remove_window(event.window);
             eves.remove(&event.window);
         }
         PropertyNotify(event) => {
@@ -85,6 +90,9 @@ pub fn handle_event<'a>(
                 // Character name changed (login/logout/character switch)
                 let old_name = thumbnail.character_name.clone();
                 let current_pos = Position::new(thumbnail.x, thumbnail.y);
+                
+                // Update cycle state with new character name
+                cycle_state.update_character(event.window, new_character_name.clone());
                 
                 // Ask persistent state what to do - pass current dimensions to ensure they're saved
                 let new_position = persistent_state.handle_character_change(
@@ -104,6 +112,8 @@ pub fn handle_event<'a>(
             } else if event.atom == ctx.atoms.wm_name
                 && let Some(thumbnail) = check_and_create_window(ctx, persistent_state, event.window, session_state)?
             {
+                // New EVE window detected
+                cycle_state.add_window(thumbnail.character_name.clone(), event.window);
                 eves.insert(event.window, thumbnail);
             } else if event.atom == ctx.atoms.net_wm_state
                 && let Some(thumbnail) = eves.get_mut(&event.window)
@@ -150,6 +160,10 @@ pub fn handle_event<'a>(
                 // Only allow dragging with right-click (button 3)
                 if event.detail == 3 {
                     thumbnail.input_state.dragging = true;
+                }
+                // Left-click sets current character for cycling
+                if event.detail == 1 {
+                    cycle_state.set_current(&thumbnail.character_name);
                 }
             }
         }

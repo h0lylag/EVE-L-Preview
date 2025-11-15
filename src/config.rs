@@ -66,6 +66,11 @@ pub struct GlobalSettings {
     /// Snap threshold in pixels (0 = disabled)
     #[serde(default = "default_snap_threshold")]
     pub snap_threshold: u16,
+    
+    /// Character order for hotkey cycling (Tab/Shift+Tab)
+    /// Characters are auto-added when first seen, but can be manually ordered
+    #[serde(default)]
+    pub hotkey_order: Vec<String>,
 }
 
 fn default_snap_threshold() -> u16 {
@@ -97,6 +102,12 @@ impl PersistentState {
     /// Get default thumbnail dimensions for screen size
     pub fn default_thumbnail_size(&self, screen_width: u16, screen_height: u16) -> (u16, u16) {
         default_thumbnail_size(screen_width, screen_height)
+    }
+    
+    /// Update hotkey order and save
+    pub fn update_hotkey_order(&mut self, order: Vec<String>) -> Result<()> {
+        self.global.hotkey_order = order;
+        self.save()
     }
 
     /// Build DisplayConfig from current settings
@@ -270,6 +281,12 @@ impl PersistentState {
                     .map(|x| x.parse().unwrap_or(false))
                     .unwrap_or(false),
                 snap_threshold: 15,
+                // Example hotkey order - edit this with your character names!
+                hotkey_order: vec![
+                    "Main Character".to_string(),
+                    "Alt 1".to_string(),
+                    "Alt 2".to_string(),
+                ],
             },
             character_positions: HashMap::new(),
         }
@@ -330,6 +347,7 @@ mod tests {
             text_background_hex: text_background_hex.to_string(),
             hide_when_no_focus,
             snap_threshold,
+            hotkey_order: Vec::new(),
         }
     }
 
