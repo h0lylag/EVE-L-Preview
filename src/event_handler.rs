@@ -172,10 +172,9 @@ pub fn handle_event<'a>(
                 .iter_mut()
                 .find(|(_, thumb)| thumb.is_hovered(event.root_x, event.root_y))
             {
-                // Left-click focuses the window (only if it wasn't dragged)
-                if event.detail == 1
-                    && thumbnail.input_state.drag_start == Position::new(event.root_x, event.root_y)
-                {
+                // Left-click focuses the window
+                // (dragging is only enabled for right-click, so left-click never drags)
+                if event.detail == 1 {
                     thumbnail.focus()?;
                 }
                 
