@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use tracing::debug;
 use x11rb::connection::Connection;
 use x11rb::protocol::render::{ConnectionExt as RenderExt, Fixed, Pictformat};
@@ -32,11 +32,31 @@ impl CachedAtoms {
     pub fn new(conn: &RustConnection) -> Result<Self> {
         // Do all intern_atom roundtrips once at startup
         Ok(Self {
-            wm_name: conn.intern_atom(false, b"WM_NAME")?.reply()?.atom,
-            net_wm_pid: conn.intern_atom(false, b"_NET_WM_PID")?.reply()?.atom,
-            net_wm_state: conn.intern_atom(false, b"_NET_WM_STATE")?.reply()?.atom,
-            net_wm_state_hidden: conn.intern_atom(false, b"_NET_WM_STATE_HIDDEN")?.reply()?.atom,
-            net_active_window: conn.intern_atom(false, b"_NET_ACTIVE_WINDOW")?.reply()?.atom,
+            wm_name: conn.intern_atom(false, b"WM_NAME")
+                .context("Failed to intern WM_NAME atom")?
+                .reply()
+                .context("Failed to get reply for WM_NAME atom")?
+                .atom,
+            net_wm_pid: conn.intern_atom(false, b"_NET_WM_PID")
+                .context("Failed to intern _NET_WM_PID atom")?
+                .reply()
+                .context("Failed to get reply for _NET_WM_PID atom")?
+                .atom,
+            net_wm_state: conn.intern_atom(false, b"_NET_WM_STATE")
+                .context("Failed to intern _NET_WM_STATE atom")?
+                .reply()
+                .context("Failed to get reply for _NET_WM_STATE atom")?
+                .atom,
+            net_wm_state_hidden: conn.intern_atom(false, b"_NET_WM_STATE_HIDDEN")
+                .context("Failed to intern _NET_WM_STATE_HIDDEN atom")?
+                .reply()
+                .context("Failed to get reply for _NET_WM_STATE_HIDDEN atom")?
+                .atom,
+            net_active_window: conn.intern_atom(false, b"_NET_ACTIVE_WINDOW")
+                .context("Failed to intern _NET_ACTIVE_WINDOW atom")?
+                .reply()
+                .context("Failed to get reply for _NET_ACTIVE_WINDOW atom")?
+                .atom,
         })
     }
 }
@@ -48,8 +68,10 @@ pub fn to_fixed(v: f32) -> Fixed {
 #[tracing::instrument]
 pub fn get_pictformat(conn: &RustConnection, depth: u8, alpha: bool) -> Result<Pictformat> {
     if let Some(format) = conn
-        .render_query_pict_formats()?
-        .reply()?
+        .render_query_pict_formats()
+        .context("Failed to query RENDER picture formats")?
+        .reply()
+        .context("Failed to get reply for RENDER picture formats query")?
         .formats
         .iter()
         .find(|format| {
@@ -71,14 +93,16 @@ pub fn get_pictformat(conn: &RustConnection, depth: u8, alpha: bool) -> Result<P
         );
         Ok(format.id)
     } else {
-        anyhow::bail!("could not find suitable Pictformat")
+        anyhow::bail!("Could not find suitable picture format (depth={}, alpha={}). Check RENDER extension support.", depth, alpha)
     }
 }
 
 pub fn is_window_eve(conn: &RustConnection, window: Window, atoms: &CachedAtoms) -> Result<Option<String>> {
     let name_prop = conn
-        .get_property(false, window, atoms.wm_name, AtomEnum::STRING, 0, 1024)?
-        .reply()?;
+        .get_property(false, window, atoms.wm_name, AtomEnum::STRING, 0, 1024)
+        .context(format!("Failed to query WM_NAME property for window {}", window))?
+        .reply()
+        .context(format!("Failed to get WM_NAME reply for window {}", window))?;
     let title = String::from_utf8_lossy(&name_prop.value).into_owned();
     Ok(if let Some(name) = title.strip_prefix(eve::WINDOW_TITLE_PREFIX) {
         Some(name.to_string())
@@ -100,13 +124,17 @@ pub fn is_eve_window_focused(conn: &RustConnection, screen: &Screen, atoms: &Cac
             AtomEnum::WINDOW,
             0,
             1,
-        )?
-        .reply()?;
+        )
+        .context("Failed to query _NET_ACTIVE_WINDOW property")?
+        .reply()
+        .context("Failed to get reply for _NET_ACTIVE_WINDOW query")?;
     
     if active_window_prop.value.len() >= 4 {
-        let active_window = u32::from_ne_bytes(active_window_prop.value[0..4].try_into()?);
+        let active_window = u32::from_ne_bytes(active_window_prop.value[0..4].try_into()
+            .context("Invalid _NET_ACTIVE_WINDOW property format")?);
         // Check if this window is an EVE client
-        Ok(is_window_eve(conn, active_window, atoms)?.is_some())
+        Ok(is_window_eve(conn, active_window, atoms)
+            .context(format!("Failed to check if active window {} is EVE client", active_window))?.is_some())
     } else {
         Ok(false)
     }
@@ -125,7 +153,8 @@ pub fn activate_window(
     conn.configure_window(
         window,
         &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE),
-    )?;
+    )
+    .context(format!("Failed to raise window {} to top of stack", window))?;
 
     // Send _NET_ACTIVE_WINDOW client message to root window
     let event = ClientMessageEvent {
@@ -148,8 +177,10 @@ pub fn activate_window(
         screen.root,
         EventMask::SUBSTRUCTURE_NOTIFY | EventMask::SUBSTRUCTURE_REDIRECT,
         &event,
-    )?;
+    )
+    .context(format!("Failed to send _NET_ACTIVE_WINDOW event for window {}", window))?;
 
-    conn.flush()?;
+    conn.flush()
+        .context("Failed to flush X11 connection after window activation")?;
     Ok(())
 }

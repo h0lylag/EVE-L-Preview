@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
@@ -214,7 +214,8 @@ impl PersistentState {
                     // This ensures existing configs get updated with new options
                     if !contents.contains("default_width") || !contents.contains("default_height") {
                         info!("Updating config with new fields (default_width, default_height)");
-                        if let Err(e) = state.save() {
+                        if let Err(e) = state.save()
+                            .context("Failed to save config after adding new fields") {
                             error!("Failed to update config: {e:?}");
                         }
                     }
@@ -235,7 +236,8 @@ impl PersistentState {
         let state = Self::from_env(None);
         
         // Save for next time
-        if let Err(e) = state.save() {
+        if let Err(e) = state.save()
+            .context(format!("Failed to save new config to {}", config_path.display())) {
             error!("Failed to save config: {e:?}");
         } else {
             println!("Generated config file: {}", config_path.display());
@@ -256,10 +258,13 @@ impl PersistentState {
     pub fn save(&self) -> Result<()> {
         let path = Self::config_path();
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
+            fs::create_dir_all(parent)
+                .context(format!("Failed to create config directory: {}", parent.display()))?;
         }
-        let contents = toml::to_string_pretty(self)?;
-        fs::write(&path, contents)?;
+        let contents = toml::to_string_pretty(self)
+            .context("Failed to serialize config to TOML")?;
+        fs::write(&path, contents)
+            .context(format!("Failed to write config file to {}", path.display()))?;
         Ok(())
     }
 
@@ -272,7 +277,8 @@ impl PersistentState {
                   character_name, x, y, width, height);
             let settings = CharacterSettings::new(x, y, width, height);
             self.character_positions.insert(character_name.to_string(), settings);
-            self.save()?;
+            self.save()
+                .context(format!("Failed to save config after updating position for '{}'", character_name))?;
         }
         Ok(())
     }
@@ -302,7 +308,8 @@ impl PersistentState {
         }
         
         // Save to disk
-        self.save()?;
+        self.save()
+            .context(format!("Failed to save config after character change from '{}' to '{}'", old_name, new_name))?;
         
         // Return new position if we have one saved for the new character
         if !new_name.is_empty() {

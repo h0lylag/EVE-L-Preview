@@ -13,7 +13,7 @@ mod thumbnail;
 mod types;
 mod x11_utils;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::sync::mpsc;
 use tracing::{error, info, warn, Level as TraceLevel};
@@ -37,13 +37,19 @@ fn check_and_create_window<'a>(
     window: Window,
     state: &SavedState,
 ) -> Result<Option<Thumbnail<'a>>> {
-    let pid_atom = ctx.conn.intern_atom(false, b"_NET_WM_PID")?.reply()?.atom;
+    let pid_atom = ctx.conn.intern_atom(false, b"_NET_WM_PID")
+        .context("Failed to intern _NET_WM_PID atom")?
+        .reply()
+        .context("Failed to get reply for _NET_WM_PID atom")?
+        .atom;
     if let Ok(prop) = ctx.conn
-        .get_property(false, window, pid_atom, AtomEnum::CARDINAL, 0, 1)?
+        .get_property(false, window, pid_atom, AtomEnum::CARDINAL, 0, 1)
+        .context(format!("Failed to query _NET_WM_PID property for window {}", window))?
         .reply()
     {
         if !prop.value.is_empty() {
-            let pid = u32::from_ne_bytes(prop.value[0..constants::x11::PID_PROPERTY_SIZE].try_into()?);
+            let pid = u32::from_ne_bytes(prop.value[0..constants::x11::PID_PROPERTY_SIZE].try_into()
+                .context("Invalid PID property format (expected 4 bytes)")?);
             if !std::fs::read_link(format!("/proc/{pid}/exe"))
                 .map(|x| {
                     x.to_string_lossy().contains(wine::WINE64_PRELOADER)
@@ -64,14 +70,17 @@ fn check_and_create_window<'a>(
     ctx.conn.change_window_attributes(
         window,
         &ChangeWindowAttributesAux::new().event_mask(EventMask::PROPERTY_CHANGE),
-    )?;
+    )
+    .context(format!("Failed to set event mask for window {}", window))?;
 
-    if let Some(character_name) = is_window_eve(ctx.conn, window, ctx.atoms)? {
+    if let Some(character_name) = is_window_eve(ctx.conn, window, ctx.atoms)
+        .context(format!("Failed to check if window {} is EVE client", window))? {
         ctx.conn.change_window_attributes(
             window,
             &ChangeWindowAttributesAux::new()
                 .event_mask(EventMask::PROPERTY_CHANGE | EventMask::FOCUS_CHANGE),
-        )?;
+        )
+        .context(format!("Failed to set focus event mask for EVE window {} ('{}')", window, character_name))?;
         
         // Get saved position and dimensions for this character/window
         let position = state.get_position(&character_name, window, &persistent_state.character_positions);
@@ -96,7 +105,8 @@ fn check_and_create_window<'a>(
             )
         };
         
-        let thumbnail = Thumbnail::new(ctx, character_name, window, ctx.font_renderer, position, width, height)?;
+        let thumbnail = Thumbnail::new(ctx, character_name.clone(), window, ctx.font_renderer, position, width, height)
+            .context(format!("Failed to create thumbnail for '{}' (window {})", character_name, window))?;
         info!("constructed Thumbnail for eve window: window={window}");
         Ok(Some(thumbnail))
     } else {
@@ -109,7 +119,11 @@ fn get_eves<'a>(
     persistent_state: &PersistentState,
     state: &SavedState,
 ) -> Result<HashMap<Window, Thumbnail<'a>>> {
-    let net_client_list = ctx.conn.intern_atom(false, b"_NET_CLIENT_LIST")?.reply()?.atom;
+    let net_client_list = ctx.conn.intern_atom(false, b"_NET_CLIENT_LIST")
+        .context("Failed to intern _NET_CLIENT_LIST atom")?
+        .reply()
+        .context("Failed to get reply for _NET_CLIENT_LIST atom")?
+        .atom;
     let prop = ctx.conn
         .get_property(
             false,
@@ -118,8 +132,10 @@ fn get_eves<'a>(
             AtomEnum::WINDOW,
             0,
             u32::MAX,
-        )?
-        .reply()?;
+        )
+        .context("Failed to query _NET_CLIENT_LIST property")?
+        .reply()
+        .context("Failed to get window list from X11 server")?;
     let windows: Vec<u32> = prop
         .value32()
         .ok_or_else(|| anyhow::anyhow!("Invalid return from _NET_CLIENT_LIST"))?
@@ -127,11 +143,13 @@ fn get_eves<'a>(
 
     let mut eves = HashMap::new();
     for w in windows {
-        if let Some(eve) = check_and_create_window(ctx, persistent_state, w, state)? {
+        if let Some(eve) = check_and_create_window(ctx, persistent_state, w, state)
+            .context(format!("Failed to process window {} during initial scan", w))? {
             eves.insert(w, eve);
         }
     }
-    ctx.conn.flush()?;
+    ctx.conn.flush()
+        .context("Failed to flush X11 connection after creating thumbnails")?;
     Ok(eves)
 }
 
@@ -153,10 +171,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_max_level(log_level)
         .finish();
 
-    tracing::subscriber::set_global_default(subscriber)?;
+    tracing::subscriber::set_global_default(subscriber)
+        .context("Failed to set global tracing subscriber")?;
 
     // Connect to X11 first to get screen dimensions for smart config defaults
-    let (conn, screen_num) = x11rb::connect(None)?;
+    let (conn, screen_num) = x11rb::connect(None)
+        .context("Failed to connect to X11 server. Is DISPLAY set correctly?")?;
     let screen = &conn.setup().roots[screen_num];
     info!("successfully connected to x11: screen={screen_num}, dimensions={}x{}", 
           screen.width_in_pixels, screen.height_in_pixels);
@@ -197,13 +217,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     
     // Pre-cache atoms once at startup (eliminates roundtrip overhead)
-    let atoms = CachedAtoms::new(&conn)?;
+    let atoms = CachedAtoms::new(&conn)
+        .context("Failed to cache X11 atoms at startup")?;
     
     // Initialize font renderer with TrueType font (size from config)
-    let font_renderer = font::FontRenderer::from_system_font(persistent_state.global.text_size)?;
+    let font_renderer = font::FontRenderer::from_system_font(persistent_state.global.text_size)
+        .context(format!("Failed to initialize font renderer with size {}", persistent_state.global.text_size))?;
     info!("Font renderer initialized with size: {}", persistent_state.global.text_size);
     
-    conn.damage_query_version(1, 1)?;
+    conn.damage_query_version(1, 1)
+        .context("Failed to query DAMAGE extension version. Is DAMAGE extension available?")?;
     conn.change_window_attributes(
         screen.root,
         &ChangeWindowAttributesAux::new().event_mask(
@@ -212,7 +235,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 | EventMask::BUTTON_RELEASE
                 | EventMask::POINTER_MOTION,
         ),
-    )?;
+    )
+    .context("Failed to set event mask on root window")?;
 
     let ctx = AppContext {
         conn: &conn,
@@ -222,7 +246,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         font_renderer: &font_renderer,
     };
 
-    let mut eves = get_eves(&ctx, &persistent_state, &session_state)?;
+    let mut eves = get_eves(&ctx, &persistent_state, &session_state)
+        .context("Failed to get initial list of EVE windows")?;
     
     // Register initial windows with cycle state
     for (window, thumbnail) in eves.iter() {
@@ -266,7 +291,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        let event = conn.wait_for_event()?;
+        let event = conn.wait_for_event()
+            .context("Failed to wait for X11 event")?;
         let _ = handle_event(
             &ctx,
             &mut persistent_state,

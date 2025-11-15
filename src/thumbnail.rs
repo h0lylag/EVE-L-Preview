@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use tracing::{error, info};
 use x11rb::connection::Connection;
 use x11rb::protocol::damage::{
@@ -62,7 +62,10 @@ impl<'a> Thumbnail<'a> {
         width: u16,
         height: u16,
     ) -> Result<Self> {
-        let src_geom = ctx.conn.get_geometry(src)?.reply()?;
+        let src_geom = ctx.conn.get_geometry(src)
+            .context("Failed to send geometry query for source EVE window")?
+            .reply()
+            .context(format!("Failed to get geometry for source window {} (character: '{}')", src, character_name))?;
         
         // Use saved position OR top-left of EVE window with 20px padding
         let Position { x, y } = position.unwrap_or_else(|| {
@@ -74,7 +77,8 @@ impl<'a> Thumbnail<'a> {
         info!("Creating thumbnail for '{}' at position ({}, {}) with size {}x{}", 
               character_name, x, y, width, height);
 
-        let window = ctx.conn.generate_id()?;
+        let window = ctx.conn.generate_id()
+            .context("Failed to generate X11 window ID")?;
         ctx.conn.create_window(
             ctx.screen.root_depth,
             window,
@@ -94,11 +98,14 @@ impl<'a> Thumbnail<'a> {
                 | EventMask::BUTTON_RELEASE
                 | EventMask::POINTER_MOTION,
             ),
-        )?;
+        )
+        .context(format!("Failed to create thumbnail window for '{}'", character_name))?;
 
         let opacity_atom = ctx.conn
-        .intern_atom(false, b"_NET_WM_WINDOW_OPACITY")?
-        .reply()?
+        .intern_atom(false, b"_NET_WM_WINDOW_OPACITY")
+        .context("Failed to intern _NET_WM_WINDOW_OPACITY atom")?
+        .reply()
+        .context("Failed to get reply for _NET_WM_WINDOW_OPACITY atom")?
         .atom;
         ctx.conn.change_property32(
             PropMode::REPLACE,
@@ -106,60 +113,92 @@ impl<'a> Thumbnail<'a> {
             opacity_atom,
             AtomEnum::CARDINAL,
             &[ctx.config.opacity],
-        )?;
+        )
+        .context(format!("Failed to set window opacity for '{}'", character_name))?;
 
-        let wm_class = ctx.conn.intern_atom(false, b"WM_CLASS")?.reply()?.atom;
+        let wm_class = ctx.conn.intern_atom(false, b"WM_CLASS")
+            .context("Failed to intern WM_CLASS atom")?
+            .reply()
+            .context("Failed to get reply for WM_CLASS atom")?
+            .atom;
         ctx.conn.change_property8(
             PropMode::REPLACE,
             window,
             wm_class,
             AtomEnum::STRING,
             b"eve-l-preview\0eve-l-preview\0",
-        )?;
+        )
+        .context(format!("Failed to set WM_CLASS for '{}'", character_name))?;
 
-        let net_wm_state = ctx.conn.intern_atom(false, b"_NET_WM_STATE")?.reply()?.atom;
-        let above_atom = ctx.conn.intern_atom(false, b"_NET_WM_STATE_ABOVE")?.reply()?.atom;
+        let net_wm_state = ctx.conn.intern_atom(false, b"_NET_WM_STATE")
+            .context("Failed to intern _NET_WM_STATE atom")?
+            .reply()
+            .context("Failed to get reply for _NET_WM_STATE atom")?
+            .atom;
+        let above_atom = ctx.conn.intern_atom(false, b"_NET_WM_STATE_ABOVE")
+            .context("Failed to intern _NET_WM_STATE_ABOVE atom")?
+            .reply()
+            .context("Failed to get reply for _NET_WM_STATE_ABOVE atom")?
+            .atom;
         ctx.conn.change_property32(
             PropMode::REPLACE,
             window,
             net_wm_state,
             AtomEnum::ATOM,
             &[above_atom],
-        )?;
+        )
+        .context(format!("Failed to set window always-on-top for '{}'", character_name))?;
 
         ctx.conn.map_window(window)
-            .inspect_err(|e| error!("Failed to map thumbnail window {}: {:?}", window, e))?;
+            .inspect_err(|e| error!("Failed to map thumbnail window {}: {:?}", window, e))
+            .context(format!("Failed to map thumbnail window for '{}'", character_name))?;
         info!("Mapped thumbnail window {} for '{}'", window, character_name);
 
-        let border_fill = ctx.conn.generate_id()?;
-        ctx.conn.render_create_solid_fill(border_fill, ctx.config.border_color)?;
+        let border_fill = ctx.conn.generate_id()
+            .context("Failed to generate ID for border fill picture")?;
+        ctx.conn.render_create_solid_fill(border_fill, ctx.config.border_color)
+            .context(format!("Failed to create border fill for '{}'", character_name))?;
 
-        let pict_format = get_pictformat(ctx.conn, ctx.screen.root_depth, false)?;
-        let src_picture = ctx.conn.generate_id()?;
-        let dst_picture = ctx.conn.generate_id()?;
-        ctx.conn.render_create_picture(src_picture, src, pict_format, &CreatePictureAux::new())?;
-        ctx.conn.render_create_picture(dst_picture, window, pict_format, &CreatePictureAux::new())?;
+        let pict_format = get_pictformat(ctx.conn, ctx.screen.root_depth, false)
+            .context("Failed to get picture format for thumbnail rendering")?;
+        let src_picture = ctx.conn.generate_id()
+            .context("Failed to generate ID for source picture")?;
+        let dst_picture = ctx.conn.generate_id()
+            .context("Failed to generate ID for destination picture")?;
+        ctx.conn.render_create_picture(src_picture, src, pict_format, &CreatePictureAux::new())
+            .context(format!("Failed to create source picture for '{}'", character_name))?;
+        ctx.conn.render_create_picture(dst_picture, window, pict_format, &CreatePictureAux::new())
+            .context(format!("Failed to create destination picture for '{}'", character_name))?;
 
-        let overlay_pixmap = ctx.conn.generate_id()?;
-        let overlay_picture = ctx.conn.generate_id()?;
-        ctx.conn.create_pixmap(x11::ARGB_DEPTH, overlay_pixmap, ctx.screen.root, width, height)?;
+        let overlay_pixmap = ctx.conn.generate_id()
+            .context("Failed to generate ID for overlay pixmap")?;
+        let overlay_picture = ctx.conn.generate_id()
+            .context("Failed to generate ID for overlay picture")?;
+        ctx.conn.create_pixmap(x11::ARGB_DEPTH, overlay_pixmap, ctx.screen.root, width, height)
+            .context(format!("Failed to create overlay pixmap for '{}'", character_name))?;
         ctx.conn.render_create_picture(
             overlay_picture,
             overlay_pixmap,
-            get_pictformat(ctx.conn, x11::ARGB_DEPTH, true)?,
+            get_pictformat(ctx.conn, x11::ARGB_DEPTH, true)
+                .context("Failed to get ARGB picture format for overlay")?,
             &CreatePictureAux::new(),
-        )?;
+        )
+        .context(format!("Failed to create overlay picture for '{}'", character_name))?;
 
-        let overlay_gc = ctx.conn.generate_id()?;
+        let overlay_gc = ctx.conn.generate_id()
+            .context("Failed to generate ID for overlay graphics context")?;
         ctx.conn.create_gc(
             overlay_gc,
             overlay_pixmap,
             &CreateGCAux::new()
                 .foreground(ctx.config.text_foreground),
-        )?;
+        )
+        .context(format!("Failed to create graphics context for '{}'", character_name))?;
 
-        let damage = ctx.conn.generate_id()?;
-        ctx.conn.damage_create(damage, src, DamageReportLevel::RAW_RECTANGLES)?;
+        let damage = ctx.conn.generate_id()
+            .context("Failed to generate ID for damage tracking")?;
+        ctx.conn.damage_create(damage, src, DamageReportLevel::RAW_RECTANGLES)
+            .context(format!("Failed to create damage tracking for '{}' (check DAMAGE extension)", character_name))?;
 
         let mut _self = Self {
             width,
@@ -186,7 +225,8 @@ impl<'a> Thumbnail<'a> {
             input_state: InputState::default(),
             conn: ctx.conn,
         };
-        _self.update_name()?;
+        _self.update_name()
+            .context(format!("Failed to render initial name overlay for '{}'", _self.character_name))?;
         Ok(_self)
     }
 
@@ -194,15 +234,20 @@ impl<'a> Thumbnail<'a> {
         if visible == self.visible {return Ok(());}
         self.visible = visible;
         if visible {
-            self.conn.map_window(self.window)?;
+            self.conn.map_window(self.window)
+                .context(format!("Failed to map window for '{}'", self.character_name))?;
         } else {
-            self.conn.unmap_window(self.window)?;
+            self.conn.unmap_window(self.window)
+                .context(format!("Failed to unmap window for '{}'", self.character_name))?;
         }
         Ok(())
     }
 
     fn capture(&self) -> Result<()> {
-        let geom = self.conn.get_geometry(self.src)?.reply()?;
+        let geom = self.conn.get_geometry(self.src)
+            .context("Failed to send geometry query for source window")?
+            .reply()
+            .context(format!("Failed to get geometry for source window (character: '{}')", self.character_name))?;
         let transform = Transform {
             matrix11: to_fixed(geom.width as f32 / self.width as f32),
             matrix22: to_fixed(geom.height as f32 / self.height as f32),
@@ -210,7 +255,8 @@ impl<'a> Thumbnail<'a> {
             ..Default::default()
         };
         self.conn
-            .render_set_picture_transform(self.src_picture, transform)?;
+            .render_set_picture_transform(self.src_picture, transform)
+            .context(format!("Failed to set transform for '{}'", self.character_name))?;
         self.conn.render_composite(
             PictOp::SRC,
             self.src_picture,
@@ -224,7 +270,8 @@ impl<'a> Thumbnail<'a> {
             0,
             self.width,
             self.height,
-        )?;
+        )
+        .context(format!("Failed to composite source window for '{}'", self.character_name))?;
         Ok(())
     }
 
@@ -243,7 +290,8 @@ impl<'a> Thumbnail<'a> {
                 0,
                 self.width,
                 self.height,
-            )?;
+            )
+            .context(format!("Failed to render border for '{}'", self.character_name))?;
         } else {
             self.conn.render_composite(
                 PictOp::CLEAR,
@@ -258,15 +306,18 @@ impl<'a> Thumbnail<'a> {
                 0,
                 self.width,
                 self.height,
-            )?;
+            )
+            .context(format!("Failed to clear border for '{}'", self.character_name))?;
         }
-        self.update_name()?;
+        self.update_name()
+            .context(format!("Failed to update name overlay after border change for '{}'", self.character_name))?;
         Ok(())
     }
 
     pub fn minimized(&mut self) -> Result<()> {
         self.minimized = true;
-        self.border(false)?;
+        self.border(false)
+            .context(format!("Failed to clear border for minimized window '{}'", self.character_name))?;
         let extents = self
             .conn
             .query_text_extents(
@@ -276,16 +327,20 @@ impl<'a> Thumbnail<'a> {
                     .map(|&c| Char2b { byte1: 0, byte2: c })
                     .collect::<Vec<_>>()
                     .as_slice(),
-            )?
-            .reply()?;
+            )
+            .context("Failed to send text extents query for MINIMIZED text")?
+            .reply()
+            .context("Failed to get text extents for MINIMIZED text")?;
         self.conn.image_text8(
             self.overlay_pixmap,
             self.overlay_gc,
             (self.width as i16 - extents.overall_width as i16) / 2,
             (self.height as i16 + extents.font_ascent + extents.font_descent) / 2,
             b"MINIMIZED",
-        )?;
-        self.update()?;
+        )
+        .context(format!("Failed to render MINIMIZED text for '{}'", self.character_name))?;
+        self.update()
+            .context(format!("Failed to update minimized display for '{}'", self.character_name))?;
 
         Ok(())
     }
@@ -305,24 +360,28 @@ impl<'a> Thumbnail<'a> {
             self.config.border_size as i16,
             self.width - self.config.border_size * 2,
             self.height - self.config.border_size * 2,
-        )?;
+        )
+        .context(format!("Failed to clear overlay area for '{}'", self.character_name))?;
         
         // Render text with fontdue
         let rendered = self.font_renderer.render_text(
             &self.character_name,
             self.config.text_foreground,
-        )?;
+        )
+        .context(format!("Failed to render text '{}' with font renderer", self.character_name))?;
         
         if rendered.width > 0 && rendered.height > 0 {
             // Upload rendered text bitmap to X11
-            let text_pixmap = self.conn.generate_id()?;
+            let text_pixmap = self.conn.generate_id()
+                .context("Failed to generate ID for text pixmap")?;
             self.conn.create_pixmap(
                 x11::ARGB_DEPTH,
                 text_pixmap,
                 self.overlay_pixmap,
                 rendered.width as u16,
                 rendered.height as u16,
-            )?;
+            )
+            .context(format!("Failed to create text pixmap for '{}'", self.character_name))?;
             
             // Convert Vec<u32> ARGB to bytes in X11 native format (little-endian BGRA)
             let mut image_data = Vec::with_capacity(rendered.data.len() * 4);
@@ -344,16 +403,20 @@ impl<'a> Thumbnail<'a> {
                 0,
                 x11::ARGB_DEPTH,
                 &image_data,
-            )?;
+            )
+            .context(format!("Failed to upload text image for '{}'", self.character_name))?;
             
             // Create picture for the text pixmap
-            let text_picture = self.conn.generate_id()?;
+            let text_picture = self.conn.generate_id()
+                .context("Failed to generate ID for text picture")?;
             self.conn.render_create_picture(
                 text_picture,
                 text_pixmap,
-                get_pictformat(self.conn, x11::ARGB_DEPTH, true)?,
+                get_pictformat(self.conn, x11::ARGB_DEPTH, true)
+                    .context("Failed to get ARGB picture format for text")?,
                 &CreatePictureAux::new(),
-            )?;
+            )
+            .context(format!("Failed to create text picture for '{}'", self.character_name))?;
             
             // Composite text onto overlay
             self.conn.render_composite(
@@ -369,11 +432,14 @@ impl<'a> Thumbnail<'a> {
                 self.config.text_y,
                 rendered.width as u16,
                 rendered.height as u16,
-            )?;
+            )
+            .context(format!("Failed to composite text onto overlay for '{}'", self.character_name))?;
             
             // Cleanup
-            self.conn.render_free_picture(text_picture)?;
-            self.conn.free_pixmap(text_pixmap)?;
+            self.conn.render_free_picture(text_picture)
+                .context("Failed to free text picture")?;
+            self.conn.free_pixmap(text_pixmap)
+                .context("Failed to free text pixmap")?;
         }
         
         Ok(())
@@ -393,21 +459,26 @@ impl<'a> Thumbnail<'a> {
             0,
             self.width,
             self.height,
-        )?;
+        )
+        .context(format!("Failed to composite overlay onto destination for '{}'", self.character_name))?;
         Ok(())
     }
 
     pub fn update(&self) -> Result<()> {
-        self.capture()?;
-        self.overlay()?;
+        self.capture()
+            .context(format!("Failed to capture source window for '{}'", self.character_name))?;
+        self.overlay()
+            .context(format!("Failed to apply overlay for '{}'", self.character_name))?;
         Ok(())
     }
 
-    pub fn focus(&self) -> Result<(), x11rb::errors::ReplyError> {
+    pub fn focus(&self) -> Result<()> {
         let net_active = self
             .conn
-            .intern_atom(false, b"_NET_ACTIVE_WINDOW")?
-            .reply()?
+            .intern_atom(false, b"_NET_ACTIVE_WINDOW")
+            .context("Failed to intern _NET_ACTIVE_WINDOW atom")?
+            .reply()
+            .context("Failed to get reply for _NET_ACTIVE_WINDOW atom")?
             .atom;
 
         let ev = ClientMessageEvent {
@@ -424,8 +495,10 @@ impl<'a> Thumbnail<'a> {
             self.root,
             EventMask::SUBSTRUCTURE_REDIRECT | EventMask::SUBSTRUCTURE_NOTIFY,
             ev,
-        )?;
-        self.conn.flush()?;
+        )
+        .context(format!("Failed to send focus event for '{}'", self.character_name))?;
+        self.conn.flush()
+            .context("Failed to flush X11 connection after focus event")?;
         info!("focused window: window={}", self.window);
         Ok(())
     }
@@ -434,8 +507,10 @@ impl<'a> Thumbnail<'a> {
         self.conn.configure_window(
             self.window,
             &ConfigureWindowAux::new().x(x as i32).y(y as i32),
-        )?;
-        self.conn.flush()?;
+        )
+        .context(format!("Failed to reposition window for '{}' to ({}, {})", self.character_name, x, y))?;
+        self.conn.flush()
+            .context("Failed to flush X11 connection after reposition")?;
         Ok(())
     }
 
@@ -443,10 +518,12 @@ impl<'a> Thumbnail<'a> {
     /// Updates name and optionally moves to new position
     pub fn set_character_name(&mut self, new_name: String, new_position: Option<Position>) -> Result<()> {
         self.character_name = new_name;
-        self.update_name()?;
+        self.update_name()
+            .context(format!("Failed to update name overlay to '{}'", self.character_name))?;
         
         if let Some(Position { x, y }) = new_position {
-            self.reposition(x, y)?;
+            self.reposition(x, y)
+                .context(format!("Failed to reposition after character change to '{}'", self.character_name))?;
         }
         Ok(())
     }

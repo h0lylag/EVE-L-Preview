@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::collections::HashMap;
 use x11rb::connection::Connection;
 use x11rb::protocol::damage::ConnectionExt as DamageExt;
@@ -66,13 +66,17 @@ pub fn handle_event<'a>(
                 .values()
                 .find(|thumbnail| thumbnail.damage == event.damage)
             {
-                thumbnail.update()?; // TODO: add fps limiter?
-                ctx.conn.damage_subtract(event.damage, 0u32, 0u32)?;
-                ctx.conn.flush()?;
+                thumbnail.update()
+                    .context(format!("Failed to update thumbnail for damage event (damage={})", event.damage))?;
+                ctx.conn.damage_subtract(event.damage, 0u32, 0u32)
+                    .context(format!("Failed to subtract damage region (damage={})", event.damage))?;
+                ctx.conn.flush()
+                    .context("Failed to flush X11 connection after damage update")?;
             }
         }
         CreateNotify(event) => {
-            if let Some(thumbnail) = check_and_create_window(ctx, persistent_state, event.window, session_state)? {
+            if let Some(thumbnail) = check_and_create_window(ctx, persistent_state, event.window, session_state)
+                .context(format!("Failed to check/create window for new window {}", event.window))? {
                 // Register with cycle state
                 cycle_state.add_window(thumbnail.character_name.clone(), event.window);
                 eves.insert(event.window, thumbnail);
@@ -85,13 +89,17 @@ pub fn handle_event<'a>(
         PropertyNotify(event) => {
             if event.atom == ctx.atoms.wm_name
                 && let Some(thumbnail) = eves.get_mut(&event.window)
-                && let Some(new_character_name) = is_window_eve(ctx.conn, event.window, ctx.atoms)?
+                && let Some(new_character_name) = is_window_eve(ctx.conn, event.window, ctx.atoms)
+                    .context(format!("Failed to check if window {} is EVE client during property change", event.window))?
             {
                 // Character name changed (login/logout/character switch)
                 let old_name = thumbnail.character_name.clone();
                 
                 // Query actual position from X11
-                let geom = ctx.conn.get_geometry(thumbnail.window)?.reply()?;
+                let geom = ctx.conn.get_geometry(thumbnail.window)
+                    .context("Failed to send geometry query during character change")?
+                    .reply()
+                    .context(format!("Failed to get geometry during character change for window {}", thumbnail.window))?;
                 let current_pos = Position::new(geom.x, geom.y);
                 
                 // Update cycle state with new character name
@@ -104,16 +112,19 @@ pub fn handle_event<'a>(
                     current_pos,
                     thumbnail.width,
                     thumbnail.height,
-                )?;
+                )
+                .context(format!("Failed to handle character change from '{}' to '{}'", old_name, new_character_name))?;
                 
                 // Update session state
                 session_state.update_window_position(event.window, current_pos.x, current_pos.y);
                 
                 // Update thumbnail (may move to new position)
-                thumbnail.set_character_name(new_character_name, new_position)?;
+                thumbnail.set_character_name(new_character_name, new_position)
+                    .context(format!("Failed to update thumbnail after character change from '{}'", old_name))?;
                 
             } else if event.atom == ctx.atoms.wm_name
-                && let Some(thumbnail) = check_and_create_window(ctx, persistent_state, event.window, session_state)?
+                && let Some(thumbnail) = check_and_create_window(ctx, persistent_state, event.window, session_state)
+                    .context(format!("Failed to create thumbnail for newly detected EVE window {}", event.window))?
             {
                 // New EVE window detected
                 cycle_state.add_window(thumbnail.character_name.clone(), event.window);
@@ -121,22 +132,27 @@ pub fn handle_event<'a>(
             } else if event.atom == ctx.atoms.net_wm_state
                 && let Some(thumbnail) = eves.get_mut(&event.window)
                 && let Some(state) = ctx.conn
-                    .get_property(false, event.window, event.atom, AtomEnum::ATOM, 0, 1024)?
-                    .reply()?
+                    .get_property(false, event.window, event.atom, AtomEnum::ATOM, 0, 1024)
+                    .context(format!("Failed to query window state for window {}", event.window))?
+                    .reply()
+                    .context(format!("Failed to get window state reply for window {}", event.window))?
                     .value32()
                 && state.collect::<Vec<_>>().contains(&ctx.atoms.net_wm_state_hidden)
             {
-                thumbnail.minimized()?;
+                thumbnail.minimized()
+                    .context(format!("Failed to set minimized state for '{}'", thumbnail.character_name))?;
             }
         }
         Event::FocusIn(event) => {
             if let Some(thumbnail) = eves.get_mut(&event.event) {
                 thumbnail.minimized = false;
                 thumbnail.focused = true;
-                thumbnail.border(true)?;
+                thumbnail.border(true)
+                    .context(format!("Failed to update border on focus for '{}'", thumbnail.character_name))?;
                 if ctx.config.hide_when_no_focus && eves.values().any(|x| !x.visible) {
                     for thumbnail in eves.values_mut() {
-                        thumbnail.visibility(true)?;
+                        thumbnail.visibility(true)
+                            .context(format!("Failed to show thumbnail '{}' on focus", thumbnail.character_name))?;
                     }
                 }
             }
@@ -144,10 +160,12 @@ pub fn handle_event<'a>(
         Event::FocusOut(event) => {
             if let Some(thumbnail) = eves.get_mut(&event.event) {
                 thumbnail.focused = false;
-                thumbnail.border(false)?;
+                thumbnail.border(false)
+                    .context(format!("Failed to clear border on focus loss for '{}'", thumbnail.character_name))?;
                 if ctx.config.hide_when_no_focus && eves.values().all(|x| !x.focused && !x.minimized) {
                     for thumbnail in eves.values_mut() {
-                        thumbnail.visibility(false)?;
+                        thumbnail.visibility(false)
+                            .context(format!("Failed to hide thumbnail '{}' on focus loss", thumbnail.character_name))?;
                     }
                 }
             }
@@ -157,10 +175,13 @@ pub fn handle_event<'a>(
                 .iter_mut()
                 .find(|(_, thumb)| thumb.is_hovered(event.root_x, event.root_y) && thumb.visible)
             {
-                let geom = ctx.conn.get_geometry(thumbnail.window)?.reply()?;
+                let geom = ctx.conn.get_geometry(thumbnail.window)
+                    .context("Failed to send geometry query on button press")?
+                    .reply()
+                    .context(format!("Failed to get geometry on button press for '{}'", thumbnail.character_name))?;
                 thumbnail.input_state.drag_start = Position::new(event.root_x, event.root_y);
                 thumbnail.input_state.win_start = Position::new(geom.x, geom.y);
-                // Only allow dragging with right-click (button 3)
+                // Only allow dragging with right-click
                 if event.detail == mouse::BUTTON_RIGHT {
                     thumbnail.input_state.dragging = true;
                 }
@@ -178,13 +199,17 @@ pub fn handle_event<'a>(
                 // Left-click focuses the window
                 // (dragging is only enabled for right-click, so left-click never drags)
                 if event.detail == mouse::BUTTON_LEFT {
-                    thumbnail.focus()?;
+                    thumbnail.focus()
+                        .context(format!("Failed to focus window for '{}'", thumbnail.character_name))?;
                 }
                 
                 // Save position after drag ends (right-click release)
                 if thumbnail.input_state.dragging {
                     // Query actual position from X11
-                    let geom = ctx.conn.get_geometry(thumbnail.window)?.reply()?;
+                    let geom = ctx.conn.get_geometry(thumbnail.window)
+                        .context("Failed to send geometry query after drag")?
+                        .reply()
+                        .context(format!("Failed to get geometry after drag for '{}'", thumbnail.character_name))?;
                     
                     // Update session state
                     session_state.update_window_position(thumbnail.window, geom.x, geom.y);
@@ -195,7 +220,8 @@ pub fn handle_event<'a>(
                         geom.y,
                         thumbnail.width,
                         thumbnail.height,
-                    )?;
+                    )
+                    .context(format!("Failed to save position for '{}' after drag", thumbnail.character_name))?;
                 }
                 
                 thumbnail.input_state.dragging = false;
@@ -229,7 +255,8 @@ pub fn handle_event<'a>(
                     thumbnail.width,
                     thumbnail.height,
                     snap_threshold,
-                )?;
+                )
+                .context(format!("Failed to handle drag motion for '{}'", thumbnail.character_name))?;
             }
         }
         _ => (),
