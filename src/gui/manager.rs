@@ -18,7 +18,8 @@ use tray_icon::{
 #[cfg(target_os = "linux")]
 use gtk::glib::ControlFlow;
 
-use super::constants::*;
+use super::{components, constants::*};
+use crate::config::PersistentState;
 
 #[cfg(target_os = "linux")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,6 +71,10 @@ struct ManagerApp {
     #[cfg(target_os = "linux")]
     tray_rx: Receiver<TrayCommand>,
     should_quit: bool,
+    
+    // Configuration state
+    config: PersistentState,
+    settings_changed: bool,
 }
 
 impl ManagerApp {
@@ -123,6 +128,9 @@ impl ManagerApp {
             }
         });
 
+        // Load configuration (we'll get screen dimensions from daemon, use defaults for now)
+        let config = PersistentState::load_with_screen(1920, 1080);
+
         #[cfg(target_os = "linux")]
         let mut app = Self {
             daemon: None,
@@ -131,6 +139,8 @@ impl ManagerApp {
             status_message: None,
             tray_rx,
             should_quit: false,
+            config,
+            settings_changed: false,
         };
 
         #[cfg(not(target_os = "linux"))]
@@ -140,6 +150,8 @@ impl ManagerApp {
             last_health_check: Instant::now(),
             status_message: None,
             should_quit: false,
+            config,
+            settings_changed: false,
         };
 
         if let Err(err) = app.start_daemon() {
@@ -205,6 +217,27 @@ impl ManagerApp {
     fn reload_daemon_config(&mut self) {
         info!("Config reload requested - restarting daemon");
         self.restart_daemon();
+    }
+
+    fn save_config(&mut self) -> Result<()> {
+        self.config.save().context("Failed to save configuration")?;
+        self.settings_changed = false;
+        self.status_message = Some(StatusMessage {
+            text: "Configuration saved successfully".to_string(),
+            color: STATUS_RUNNING,
+        });
+        info!("Configuration saved to disk");
+        Ok(())
+    }
+
+    fn discard_changes(&mut self) {
+        self.config = PersistentState::load_with_screen(1920, 1080);
+        self.settings_changed = false;
+        self.status_message = Some(StatusMessage {
+            text: "Changes discarded".to_string(),
+            color: STATUS_STOPPED,
+        });
+        info!("Configuration changes discarded");
     }
 
     fn poll_daemon(&mut self) {
@@ -291,6 +324,46 @@ impl eframe::App for ManagerApp {
             ui.add_space(SECTION_SPACING);
             ui.separator();
             ui.add_space(SECTION_SPACING);
+
+            // Settings Editor
+            if components::settings_editor::ui(ui, &mut self.config.global) {
+                self.settings_changed = true;
+            }
+
+            ui.add_space(SECTION_SPACING);
+            ui.separator();
+            ui.add_space(SECTION_SPACING);
+
+            // Save/Discard buttons
+            ui.horizontal(|ui| {
+                if ui.button("💾 Save & Apply").clicked() {
+                    if let Err(err) = self.save_config() {
+                        error!(error = ?err, "Failed to save config");
+                        self.status_message = Some(StatusMessage {
+                            text: format!("Save failed: {err}"),
+                            color: STATUS_STOPPED,
+                        });
+                    } else {
+                        // Reload daemon to apply changes
+                        self.reload_daemon_config();
+                    }
+                }
+                
+                if ui.button("↶ Discard Changes").clicked() {
+                    self.discard_changes();
+                }
+                
+                if self.settings_changed {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(255, 200, 0),
+                        "● Unsaved changes"
+                    );
+                }
+            });
+
+            ui.add_space(SECTION_SPACING);
+            ui.separator();
+            ui.add_space(SECTION_SPACING / 2.0);
 
             ui.group(|ui| {
                 ui.label(egui::RichText::new("Tips").strong());

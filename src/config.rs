@@ -43,14 +43,14 @@ pub struct PersistentState {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GlobalSettings {
     #[serde(rename = "opacity_percent")]
-    opacity_percent: u8,
+    pub opacity_percent: u8,
     pub border_size: u16,
     #[serde(rename = "border_color")]
-    border_color_hex: String,
+    pub border_color_hex: String,
     pub text_x: i16,
     pub text_y: i16,
     #[serde(rename = "text_color")]
-    text_color_hex: String,
+    pub text_color_hex: String,
     
     /// Text size in pixels (accepts integer or float)
     #[serde(rename = "text_size", default = "default_text_size", deserialize_with = "deserialize_text_size", serialize_with = "serialize_text_size")]
