@@ -35,7 +35,7 @@ impl ProfileSelector {
                 
                 // Profile dropdown
                 let selected_profile = &config.profiles[*selected_idx];
-                egui::ComboBox::from_id_source("profile_selector")
+                egui::ComboBox::from_id_salt("profile_selector")
                     .selected_text(&selected_profile.name)
                     .show_ui(ui, |ui| {
                         for (idx, profile) in config.profiles.iter().enumerate() {

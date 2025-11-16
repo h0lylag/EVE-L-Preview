@@ -54,6 +54,12 @@ pub struct GlobalSettingsPhase2 {
     pub log_level: String,
     #[serde(default)]
     pub minimize_clients_on_switch: bool,
+    #[serde(default)]
+    pub hotkey_require_eve_focus: bool,
+    #[serde(default)]
+    pub hide_when_no_focus: bool,
+    #[serde(default = "default_snap_threshold")]
+    pub snap_threshold: u16,
 }
 
 /// Profile - A complete set of visual and behavioral settings
@@ -79,12 +85,7 @@ pub struct Profile {
     #[serde(rename = "text_background")]
     pub text_background: String,
     
-    // Behavior settings
-    pub hide_when_no_focus: bool,
-    pub snap_threshold: u16,
-    
-    // Hotkey settings
-    pub hotkey_require_eve_focus: bool,
+    // Hotkey settings (cycle_group is per-profile)
     #[serde(default)]
     pub cycle_group: Vec<String>,
     
@@ -110,6 +111,10 @@ fn default_log_level() -> String {
     "info".to_string()
 }
 
+fn default_snap_threshold() -> u16 {
+    15
+}
+
 fn default_border_enabled() -> bool {
     true
 }
@@ -127,9 +132,6 @@ fn default_profiles() -> Vec<Profile> {
         text_y: 20,
         text_foreground: "#FFFFFFFF".to_string(),
         text_background: "#7F000000".to_string(),
-        hide_when_no_focus: false,
-        snap_threshold: 15,
-        hotkey_require_eve_focus: false,
         cycle_group: Vec::new(),
         character_positions: HashMap::new(),
     }]
@@ -152,6 +154,9 @@ impl Default for GlobalSettingsPhase2 {
         Self {
             log_level: default_log_level(),
             minimize_clients_on_switch: false,
+            hotkey_require_eve_focus: false,
+            hide_when_no_focus: false,
+            snap_threshold: default_snap_threshold(),
         }
     }
 }

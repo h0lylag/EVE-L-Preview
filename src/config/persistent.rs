@@ -314,12 +314,12 @@ impl PersistentState {
             text_y: profile.text_y,
             text_color_hex: profile.text_foreground.clone(), // Use foreground as main text color
             text_size: profile.text_size as f32,
-            hide_when_no_focus: profile.hide_when_no_focus,
-            snap_threshold: profile.snap_threshold,
+            hide_when_no_focus: config.global.hide_when_no_focus,
+            snap_threshold: config.global.snap_threshold,
             default_width: default_width(),
             default_height: default_height(),
             hotkey_order: profile.cycle_group.clone(),
-            hotkey_require_eve_focus: profile.hotkey_require_eve_focus,
+            hotkey_require_eve_focus: config.global.hotkey_require_eve_focus,
         };
         
         let mut state = PersistentState {

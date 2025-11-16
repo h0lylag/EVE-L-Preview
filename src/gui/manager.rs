@@ -19,7 +19,7 @@ use tray_icon::{
 use gtk::glib::ControlFlow;
 
 use super::{components, constants::*};
-use crate::config::profile::{Config, Profile};
+use crate::config::profile::Config;
 use crate::gui::components::profile_selector::{ProfileSelector, ProfileAction};
 
 #[cfg(target_os = "linux")]
@@ -77,7 +77,17 @@ struct ManagerApp {
     config: Config,
     selected_profile_idx: usize,
     profile_selector: ProfileSelector,
+    hotkey_settings_state: components::hotkey_settings::HotkeySettingsState,
     settings_changed: bool,
+    
+    // UI state
+    active_tab: ActiveTab,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ActiveTab {
+    GlobalSettings,
+    ProfileSettings,
 }
 
 impl ManagerApp {
@@ -140,6 +150,10 @@ impl ManagerApp {
             .position(|p| p.name == config.manager.selected_profile)
             .unwrap_or(0);
 
+        // Initialize hotkey settings state with current profile
+        let mut hotkey_settings_state = components::hotkey_settings::HotkeySettingsState::default();
+        hotkey_settings_state.load_from_profile(&config.profiles[selected_profile_idx]);
+
         #[cfg(target_os = "linux")]
         let mut app = Self {
             daemon: None,
@@ -151,7 +165,9 @@ impl ManagerApp {
             config,
             selected_profile_idx,
             profile_selector: ProfileSelector::new(),
+            hotkey_settings_state,
             settings_changed: false,
+            active_tab: ActiveTab::GlobalSettings,
         };
 
         #[cfg(not(target_os = "linux"))]
@@ -164,7 +180,9 @@ impl ManagerApp {
             config,
             selected_profile_idx,
             profile_selector: ProfileSelector::new(),
+            hotkey_settings_state,
             settings_changed: false,
+            active_tab: ActiveTab::GlobalSettings,
         };
 
         if let Err(err) = app.start_daemon() {
@@ -312,6 +330,71 @@ impl ManagerApp {
             }
         }
     }
+
+    fn render_global_settings_tab(&mut self, ui: &mut egui::Ui) {
+        // Global Settings
+        if components::global_settings::ui(ui, &mut self.config.global) {
+            self.settings_changed = true;
+        }
+    }
+    
+    fn render_profile_settings_tab(&mut self, ui: &mut egui::Ui) {
+        // Profile Selector
+        let action = self.profile_selector.ui(
+            ui,
+            &mut self.config,
+            &mut self.selected_profile_idx
+        );
+        
+        match action {
+            ProfileAction::SwitchProfile => {
+                // Load cycle group text when switching profiles
+                let current_profile = &self.config.profiles[self.selected_profile_idx];
+                self.hotkey_settings_state.load_from_profile(current_profile);
+                
+                // Save config and reload daemon
+                if let Err(err) = self.save_config() {
+                    error!(error = ?err, "Failed to save config after profile switch");
+                    self.status_message = Some(StatusMessage {
+                        text: format!("Save failed: {err}"),
+                        color: STATUS_STOPPED,
+                    });
+                } else {
+                    self.reload_daemon_config();
+                }
+            }
+            ProfileAction::ProfileCreated | ProfileAction::ProfileDeleted => {
+                // Save config and reload daemon
+                if let Err(err) = self.save_config() {
+                    error!(error = ?err, "Failed to save config after profile action");
+                    self.status_message = Some(StatusMessage {
+                        text: format!("Save failed: {err}"),
+                        color: STATUS_STOPPED,
+                    });
+                } else {
+                    self.reload_daemon_config();
+                }
+            }
+            ProfileAction::None => {}
+        }
+
+        ui.add_space(SECTION_SPACING);
+        ui.separator();
+        ui.add_space(SECTION_SPACING);
+
+        // Visual Settings for selected profile
+        let current_profile = &mut self.config.profiles[self.selected_profile_idx];
+        if components::visual_settings::ui(ui, current_profile) {
+            self.settings_changed = true;
+        }
+
+        ui.add_space(SECTION_SPACING);
+
+        // Hotkey Settings for selected profile
+        if components::hotkey_settings::ui(ui, current_profile, &mut self.hotkey_settings_state) {
+            self.settings_changed = true;
+        }
+    }
 }
 
 impl eframe::App for ManagerApp {
@@ -326,18 +409,36 @@ impl eframe::App for ManagerApp {
         }
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.add_space(PADDING);
-            ui.heading("EVE-L-Preview Manager");
-            ui.add_space(SECTION_SPACING);
-
-            ui.group(|ui| {
-                ui.label(egui::RichText::new("Daemon Status").strong());
+            // Slim status bar at top
+            ui.horizontal(|ui| {
+                ui.label("Daemon:");
                 ui.colored_label(self.daemon_status.color(), self.daemon_status.label());
                 if let Some(child) = &self.daemon {
                     ui.label(format!("PID: {}", child.id()));
                 }
+                ui.add_space(10.0);
                 if let Some(message) = &self.status_message {
                     ui.colored_label(message.color, &message.text);
+                }
+            });
+
+            ui.separator();
+
+            // Tab Bar
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut self.active_tab, ActiveTab::GlobalSettings, "⚙ Global Settings");
+                ui.selectable_value(&mut self.active_tab, ActiveTab::ProfileSettings, "📋 Profile Settings");
+            });
+
+            ui.add_space(SECTION_SPACING);
+            ui.separator();
+            ui.add_space(SECTION_SPACING);
+
+            // Tab Content
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                match self.active_tab {
+                    ActiveTab::GlobalSettings => self.render_global_settings_tab(ui),
+                    ActiveTab::ProfileSettings => self.render_profile_settings_tab(ui),
                 }
             });
 
@@ -345,44 +446,7 @@ impl eframe::App for ManagerApp {
             ui.separator();
             ui.add_space(SECTION_SPACING);
 
-            // Profile Selector
-            let action = self.profile_selector.ui(
-                ui,
-                &mut self.config,
-                &mut self.selected_profile_idx
-            );
-            
-            match action {
-                ProfileAction::SwitchProfile | ProfileAction::ProfileCreated | ProfileAction::ProfileDeleted => {
-                    // Save config and reload daemon
-                    if let Err(err) = self.save_config() {
-                        error!(error = ?err, "Failed to save config after profile action");
-                        self.status_message = Some(StatusMessage {
-                            text: format!("Save failed: {err}"),
-                            color: STATUS_STOPPED,
-                        });
-                    } else {
-                        self.reload_daemon_config();
-                    }
-                }
-                ProfileAction::None => {}
-            }
-
-            ui.add_space(SECTION_SPACING);
-            ui.separator();
-            ui.add_space(SECTION_SPACING);
-
-            // Visual Settings for selected profile
-            let current_profile = &mut self.config.profiles[self.selected_profile_idx];
-            if components::visual_settings::ui(ui, current_profile) {
-                self.settings_changed = true;
-            }
-
-            ui.add_space(SECTION_SPACING);
-            ui.separator();
-            ui.add_space(SECTION_SPACING);
-
-            // Save/Discard buttons
+            // Save/Discard buttons (always visible at bottom)
             ui.horizontal(|ui| {
                 if ui.button("💾 Save & Apply").clicked() {
                     if let Err(err) = self.save_config() {
@@ -392,7 +456,6 @@ impl eframe::App for ManagerApp {
                             color: STATUS_STOPPED,
                         });
                     } else {
-                        // Reload daemon to apply changes
                         self.reload_daemon_config();
                     }
                 }
@@ -407,17 +470,6 @@ impl eframe::App for ManagerApp {
                         "● Unsaved changes"
                     );
                 }
-            });
-
-            ui.add_space(SECTION_SPACING);
-            ui.separator();
-            ui.add_space(SECTION_SPACING / 2.0);
-
-            ui.group(|ui| {
-                ui.label(egui::RichText::new("Tips").strong());
-                ui.label("• Tab/Shift+Tab: Cycle characters");
-                ui.label("• Right-click drag: Move thumbnails");
-                ui.label("• Left-click: Focus EVE window");
             });
         });
 
