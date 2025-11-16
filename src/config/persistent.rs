@@ -406,16 +406,27 @@ impl PersistentState {
     }
 
     pub fn save(&self) -> Result<()> {
-        let path = Self::config_path();
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .context(format!("Failed to create config directory: {}", parent.display()))?;
-        }
-        let contents = toml::to_string_pretty(self)
-            .context("Failed to serialize config to TOML")?;
-        fs::write(&path, contents)
-            .context(format!("Failed to write config file to {}", path.display()))?;
-        Ok(())
+        // Load the profile-based config
+        let config_path = Self::config_path();
+        let mut profile_config = if let Ok(contents) = fs::read_to_string(&config_path) {
+            toml::from_str::<crate::config::profile::Config>(&contents)
+                .context("Failed to parse profile config for save")?
+        } else {
+            // No config exists, create default
+            crate::config::profile::Config::default()
+        };
+        
+        // Update character positions in the selected profile
+        let profile = profile_config.profiles
+            .iter_mut()
+            .find(|p| p.name == profile_config.manager.selected_profile)
+            .or_else(|| profile_config.profiles.first_mut())
+            .expect("Config must have at least one profile");
+        
+        profile.character_positions = self.character_positions.clone();
+        
+        // Save the updated profile config
+        profile_config.save()
     }
 
     /// Update position and dimensions after drag - saves to character_positions and persists
