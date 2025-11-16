@@ -29,5 +29,3 @@ png = "0.17"  # PNG decoding for tray icon
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3"
 nix = { version = "0.29", features = ["signal"] }
-
-# No build dependencies needed for FLTK
