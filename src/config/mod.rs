@@ -95,8 +95,8 @@
 //!
 //! This ensures one source of truth with no synchronization issues.
 
-pub mod persistent;
+pub mod daemon_state;
 pub mod profile;
 
 // Re-export commonly used types
-pub use persistent::{DisplayConfig, PersistentState};
+pub use daemon_state::{DisplayConfig, PersistentState};

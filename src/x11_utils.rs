@@ -7,7 +7,7 @@ use x11rb::rust_connection::RustConnection;
 
 use crate::config::DisplayConfig;
 use crate::constants::{eve, fixed_point, x11};
-use crate::font::FontRenderer;
+use crate::preview::font::FontRenderer;
 use crate::types::EveWindowType;
 
 /// Application context holding immutable shared state

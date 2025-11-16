@@ -1,5 +1,12 @@
 //! Preview daemon - runs in background showing EVE window thumbnails
 
+mod cycle_state;
+mod event_handler;
+pub mod font;
+mod session_state;
+mod snapping;
+mod thumbnail;
+
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::sync::mpsc;
@@ -10,20 +17,20 @@ use x11rb::protocol::xproto::*;
 
 use crate::config::PersistentState;
 use crate::constants::{self, eve, paths, wine};
-use crate::cycle_state::CycleState;
-use crate::event_handler::handle_event;
-use crate::font;
 use crate::hotkeys::{self, spawn_listener, CycleCommand};
-use crate::persistence::SavedState;
-use crate::thumbnail::Thumbnail;
 use crate::types::Dimensions;
 use crate::x11_utils::{activate_window, is_window_eve, AppContext, CachedAtoms};
+
+use cycle_state::CycleState;
+use event_handler::handle_event;
+use session_state::SessionState;
+use thumbnail::Thumbnail;
 
 fn check_and_create_window<'a>(
     ctx: &AppContext<'a>,
     persistent_state: &PersistentState,
     window: Window,
-    state: &SavedState,
+    state: &SessionState,
 ) -> Result<Option<Thumbnail<'a>>> {
     let pid_atom = ctx.conn.intern_atom(false, b"_NET_WM_PID")
         .context("Failed to intern _NET_WM_PID atom")?
@@ -125,7 +132,7 @@ fn check_and_create_window<'a>(
 fn get_eves<'a>(
     ctx: &AppContext<'a>,
     persistent_state: &PersistentState,
-    state: &SavedState,
+    state: &SessionState,
 ) -> Result<HashMap<Window, Thumbnail<'a>>> {
     let net_client_list = ctx.conn.intern_atom(false, b"_NET_CLIENT_LIST")
         .context("Failed to intern _NET_CLIENT_LIST atom")?
@@ -181,7 +188,7 @@ pub fn run_preview_daemon() -> Result<()> {
     let config = persistent_state.build_display_config();
     info!(config = ?config, "Loaded display configuration");
     
-    let mut session_state = SavedState::new();
+    let mut session_state = SessionState::new();
     info!(
         count = persistent_state.character_positions.len(),
         "Loaded character positions from config"

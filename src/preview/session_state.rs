@@ -6,7 +6,7 @@ use crate::types::{CharacterSettings, Position};
 
 /// Runtime state for position tracking
 /// Window positions are session-only (not persisted to disk)
-pub struct SavedState {
+pub struct SessionState {
     /// Window ID → position (session-only, not persisted)
     /// Used for logged-out windows that show "EVE" without character name
     /// Window IDs are ephemeral and don't survive X11 server restarts
@@ -18,7 +18,7 @@ pub struct SavedState {
     pub inherit_window_position: bool,
 }
 
-impl Default for SavedState {
+impl Default for SessionState {
     fn default() -> Self {
         Self {
             window_positions: HashMap::new(),
@@ -27,7 +27,7 @@ impl Default for SavedState {
     }
 }
 
-impl SavedState {
+impl SessionState {
     pub fn new() -> Self {
         Self::default()
     }
@@ -83,7 +83,7 @@ mod tests {
 
     #[test]
     fn test_get_position_character_from_config() {
-        let state = SavedState::new();
+        let state = SessionState::new();
         let mut char_positions = HashMap::new();
         char_positions.insert("Alice".to_string(), CharacterSettings::new(100, 200, 240, 135));
         
@@ -93,7 +93,7 @@ mod tests {
 
     #[test]
     fn test_get_position_new_character_no_inherit() {
-        let state = SavedState {
+        let state = SessionState {
             window_positions: HashMap::from([(456, Position::new(300, 400))]),
             inherit_window_position: false,
         };
@@ -106,7 +106,7 @@ mod tests {
 
     #[test]
     fn test_get_position_new_character_with_inherit() {
-        let state = SavedState {
+        let state = SessionState {
             window_positions: HashMap::from([(789, Position::new(500, 600))]),
             inherit_window_position: true,
         };
@@ -119,7 +119,7 @@ mod tests {
 
     #[test]
     fn test_get_position_new_character_inherit_but_no_window_position() {
-        let state = SavedState {
+        let state = SessionState {
             window_positions: HashMap::new(),
             inherit_window_position: true,
         };
@@ -132,7 +132,7 @@ mod tests {
 
     #[test]
     fn test_get_position_logged_out_window() {
-        let state = SavedState {
+        let state = SessionState {
             window_positions: HashMap::from([(111, Position::new(700, 800))]),
             inherit_window_position: false,
         };
@@ -145,7 +145,7 @@ mod tests {
 
     #[test]
     fn test_get_position_logged_out_window_no_saved_position() {
-        let state = SavedState::new();
+        let state = SessionState::new();
         let char_positions = HashMap::new();
         
         // Logged-out window with no saved position → None (center)
@@ -155,7 +155,7 @@ mod tests {
 
     #[test]
     fn test_get_position_character_priority_over_window() {
-        let mut state = SavedState::new();
+        let mut state = SessionState::new();
         state.window_positions.insert(333, Position::new(900, 1000));
         state.inherit_window_position = true;
         
@@ -169,7 +169,7 @@ mod tests {
 
     #[test]
     fn test_update_window_position() {
-        let mut state = SavedState::new();
+        let mut state = SessionState::new();
         
         state.update_window_position(444, 1300, 1400);
         assert_eq!(state.window_positions.get(&444), Some(&Position::new(1300, 1400)));
@@ -181,7 +181,7 @@ mod tests {
 
     #[test]
     fn test_update_window_position_multiple_windows() {
-        let mut state = SavedState::new();
+        let mut state = SessionState::new();
         
         state.update_window_position(555, 100, 200);
         state.update_window_position(666, 300, 400);

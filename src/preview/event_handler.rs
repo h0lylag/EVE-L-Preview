@@ -8,12 +8,13 @@ use tracing::{debug, info, trace, warn};
 
 use crate::config::PersistentState;
 use crate::constants::mouse;
-use crate::cycle_state::CycleState;
-use crate::persistence::SavedState;
-use crate::snapping::{self, Rect};
-use crate::thumbnail::Thumbnail;
 use crate::types::{Position, ThumbnailState};
 use crate::x11_utils::{is_window_eve, AppContext};
+
+use super::cycle_state::CycleState;
+use super::session_state::SessionState;
+use super::snapping::{self, Rect};
+use super::thumbnail::Thumbnail;
 
 /// Handle DamageNotify events - update damaged thumbnail
 #[tracing::instrument(skip(ctx, eves))]
@@ -40,9 +41,9 @@ fn handle_create_notify<'a>(
     persistent_state: &PersistentState,
     eves: &mut HashMap<Window, Thumbnail<'a>>,
     event: CreateNotifyEvent,
-    session_state: &SavedState,
+    session_state: &SessionState,
     cycle_state: &mut CycleState,
-    check_and_create_window: &impl Fn(&AppContext<'a>, &PersistentState, Window, &SavedState) -> Result<Option<Thumbnail<'a>>>,
+    check_and_create_window: &impl Fn(&AppContext<'a>, &PersistentState, Window, &SessionState) -> Result<Option<Thumbnail<'a>>>,
 ) -> Result<()> {
     debug!(window = event.window, "CreateNotify received");
     if let Some(thumbnail) = check_and_create_window(ctx, persistent_state, event.window, session_state)
@@ -157,7 +158,7 @@ fn handle_button_release(
     persistent_state: &mut PersistentState,
     eves: &mut HashMap<Window, Thumbnail>,
     event: ButtonReleaseEvent,
-    session_state: &mut SavedState,
+    session_state: &mut SessionState,
 ) -> Result<()> {
     debug!(x = event.root_x, y = event.root_y, detail = event.detail, "ButtonRelease received");
     if let Some((_, thumbnail)) = eves
@@ -296,9 +297,9 @@ pub fn handle_event<'a>(
     persistent_state: &mut PersistentState,
     eves: &mut HashMap<Window, Thumbnail<'a>>,
     event: Event,
-    session_state: &mut SavedState,
+    session_state: &mut SessionState,
     cycle_state: &mut CycleState,
-    check_and_create_window: impl Fn(&AppContext<'a>, &PersistentState, Window, &SavedState) -> Result<Option<Thumbnail<'a>>>,
+    check_and_create_window: impl Fn(&AppContext<'a>, &PersistentState, Window, &SessionState) -> Result<Option<Thumbnail<'a>>>,
 ) -> Result<()> {
     match event {
         DamageNotify(event) => handle_damage_notify(ctx, eves, event),

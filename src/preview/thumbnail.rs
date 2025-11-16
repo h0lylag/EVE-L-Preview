@@ -13,9 +13,10 @@ use x11rb::wrapper::ConnectionExt as WrapperExt;
 
 use crate::config::DisplayConfig;
 use crate::constants::{positioning, x11};
-use crate::font::FontRenderer;
 use crate::types::{Dimensions, Position, ThumbnailState};
 use crate::x11_utils::{get_pictformat, to_fixed, AppContext};
+
+use super::font::FontRenderer;
 
 #[derive(Debug, Default)]
 pub struct InputState {

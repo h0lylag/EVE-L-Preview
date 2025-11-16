@@ -3,15 +3,9 @@
 mod color;
 mod config;
 mod constants;
-mod cycle_state;
-mod event_handler;
-mod font;
 mod gui;
 mod hotkeys;
-mod persistence;
 mod preview;
-mod snapping;
-mod thumbnail;
 mod types;
 mod x11_utils;
 
