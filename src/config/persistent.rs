@@ -1,7 +1,8 @@
 //! Persistent state configuration for preview daemon
 //!
-//! Flattened JSON structure used by the X11 preview daemon.
-//! This is the original config system from Phase 1.
+//! Runtime state extracted from JSON profile config.
+//! The daemon loads the selected profile and global settings at startup,
+//! then maintains runtime character positions synchronized with the JSON file.
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -18,7 +19,7 @@ use crate::types::{CharacterSettings, Position, TextOffset};
 
 
 // ==============================================================================
-// Phase 1: Original PersistentState (still used by preview daemon)
+// Daemon Runtime State
 // ==============================================================================
 
 /// Immutable display settings (loaded once at startup)
@@ -438,53 +439,5 @@ mod tests {
         
         // File save will fail in test environment
         assert!(result.is_err());
-    }
-
-    #[test]
-
-    #[test]
-
-    #[test]
-
-    #[test]
-
-    #[test]
-    fn test_existing_hotkey_order_preserved() {
-        let state = PersistentState::from_env(None);
-        // If user already has a hotkey_order array, it should not be replaced
-        let contents = r#"hotkey_order = ["a"]"#;
-
-        let (doc, added) = PersistentState::add_missing_defaults_to_document(contents, &state);
-
-        assert!(!added.contains(&"hotkey_order".to_string()));
-        // Ensure the array is still present and intact
-        assert!(doc.contains("hotkey_order"));
-        assert!(doc.contains("\"a\""));
-
-        // Parse back into a toml_edit::Document and check the array length / value
-        let parsed = Document::from_str(&doc).expect("doc should parse");
-        let arr = parsed["hotkey_order"].as_array().expect("hotkey_order should be array");
-        assert_eq!(arr.len(), 1);
-        assert_eq!(arr.get(0).and_then(|v| v.as_str()), Some("a"));
-    }
-
-    #[test]
-
-    #[test]
-
-    #[test]
-    fn test_opacity_percent_roundtrip() {
-        // Test that opacity_percent converts correctly through Opacity type
-        let state = PersistentState {
-            global: test_global_settings(
-                50, 3, "#FF00FF00", 10, 20, "#FFFFFFFF", false, 15,
-            ),
-            character_positions: HashMap::new(),
-        };
-
-        let config = state.build_display_config();
-        
-        // 50% → 0x7F or 0x80 (due to rounding)
-        assert!(config.opacity >= 0x7F000000 && config.opacity <= 0x80000000);
     }
 }

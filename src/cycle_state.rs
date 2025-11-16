@@ -4,7 +4,7 @@ use x11rb::protocol::xproto::Window;
 
 /// Maps character names to their window IDs and positions in cycle order
 pub struct CycleState {
-    /// Configured order from TOML (persistent across sessions)
+    /// Configured order from profile's cycle_group (persistent across sessions)
     config_order: Vec<String>,
 
     /// Current index in config_order (0-based)
