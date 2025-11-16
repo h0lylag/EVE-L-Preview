@@ -134,20 +134,6 @@ fn default_hotkey_require_eve_focus() -> bool {
     true
 }
 
-fn serialize_color<S>(hex: &String, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    serializer.serialize_str(hex)
-}
-
-fn deserialize_color<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    String::deserialize(deserializer)
-}
-
 impl PersistentState {
     fn config_path() -> PathBuf {
         let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
@@ -162,12 +148,6 @@ impl PersistentState {
         (self.global.default_width, self.global.default_height)
     }
     
-    /// Update hotkey order and save
-    pub fn update_hotkey_order(&mut self, order: Vec<String>) -> Result<()> {
-        self.global.hotkey_order = order;
-        self.save()
-    }
-
     /// Validate and clamp config values to safe ranges
     /// Called after loading TOML or creating from env vars
     fn validate_and_clamp(&mut self) {

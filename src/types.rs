@@ -20,10 +20,6 @@ impl EveWindowType {
         }
     }
     
-    /// Check if this window is logged in (has a character)
-    pub fn is_logged_in(&self) -> bool {
-        matches!(self, EveWindowType::LoggedIn(_))
-    }
 }
 
 /// A position in 2D space (X11 coordinates)
@@ -127,10 +123,6 @@ impl TextOffset {
         Self { x, y }
     }
 
-    /// Create new offset (alias for from_border_edge for consistency)
-    pub fn new(x: i16, y: i16) -> Self {
-        Self { x, y }
-    }
 }
 
 /// Thumbnail lifecycle state
@@ -192,10 +184,6 @@ impl CharacterSettings {
         Position::new(self.x, self.y)
     }
     
-    /// Get dimensions directly
-    pub fn get_dimensions(&self) -> Dimensions {
-        self.dimensions
-    }
 }
 
 #[cfg(test)]
@@ -280,13 +268,13 @@ mod tests {
 
     #[test]
     fn test_text_offset_creation() {
-        let offset = TextOffset::from_border_edge(10, 20);
-        assert_eq!(offset.x, 10);
-        assert_eq!(offset.y, 20);
+    let offset = TextOffset::from_border_edge(10, 20);
+    assert_eq!(offset.x, 10);
+    assert_eq!(offset.y, 20);
         
-        let offset2 = TextOffset::new(15, 25);
-        assert_eq!(offset2.x, 15);
-        assert_eq!(offset2.y, 25);
+    let offset2 = TextOffset::from_border_edge(15, 25);
+    assert_eq!(offset2.x, 15);
+    assert_eq!(offset2.y, 25);
     }
 
     #[test]

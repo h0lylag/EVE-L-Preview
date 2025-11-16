@@ -14,6 +14,9 @@ let
       xorg.libXrandr
       xorg.libXi
       vulkan-loader
+      gtk3
+      libappindicator
+      libappindicator-gtk3
     ];
 in
 pkgs.mkShell {

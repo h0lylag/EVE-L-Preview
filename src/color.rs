@@ -65,20 +65,6 @@ impl HexColor {
         }
     }
 
-    /// Convert to premultiplied ARGB32 (for text rendering)
-    /// Multiplies RGB channels by alpha for proper blending
-    pub fn to_premultiplied_argb32(self) -> u32 {
-        let a = (self.0 >> 24) & 0xFF;
-        let r = (self.0 >> 16) & 0xFF;
-        let g = (self.0 >> 8) & 0xFF;
-        let b = self.0 & 0xFF;
-
-        let r_p = r * a / 255;
-        let g_p = g * a / 255;
-        let b_p = b * a / 255;
-
-        (a << 24) | (r_p << 16) | (g_p << 8) | b_p
-    }
 }
 
 /// Opacity as percentage (0-100)
@@ -148,19 +134,6 @@ mod tests {
         assert_eq!(x11.red, 0x8080);
         assert_eq!(x11.green, 0x4040);
         assert_eq!(x11.blue, 0x2020);
-    }
-
-    #[test]
-    fn test_premultiply() {
-        // 50% alpha (0x80), full red (0xFF)
-        let color = HexColor(0x80FF0000);
-        let premul = color.to_premultiplied_argb32();
-        
-        // Alpha stays 0x80, red becomes ~0x80 (0xFF * 0x80 / 0xFF)
-        let a = (premul >> 24) & 0xFF;
-        let r = (premul >> 16) & 0xFF;
-        assert_eq!(a, 0x80);
-        assert_eq!(r, 0x80); // 255 * 128 / 255 = 128
     }
 
     #[test]

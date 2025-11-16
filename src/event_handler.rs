@@ -4,7 +4,7 @@ use x11rb::connection::Connection;
 use x11rb::protocol::damage::ConnectionExt as DamageExt;
 use x11rb::protocol::Event::{self, CreateNotify, DamageNotify, DestroyNotify, PropertyNotify};
 use x11rb::protocol::xproto::*;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, info, trace, warn};
 
 use crate::config::PersistentState;
 use crate::constants::mouse;

@@ -1,4 +1,3 @@
-use anyhow::Result;
 use std::collections::HashMap;
 use tracing::info;
 use x11rb::protocol::xproto::Window;

@@ -5,14 +5,14 @@ use x11rb::protocol::damage::{
     ConnectionExt as DamageExt, Damage, ReportLevel as DamageReportLevel,
 };
 use x11rb::protocol::render::{
-    ConnectionExt as RenderExt, CreatePictureAux, Fixed, PictOp, Picture, Transform,
+    ConnectionExt as RenderExt, CreatePictureAux, PictOp, Picture, Transform,
 };
 use x11rb::protocol::xproto::*;
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as WrapperExt;
 
 use crate::config::DisplayConfig;
-use crate::constants::{mouse, positioning, x11};
+use crate::constants::{positioning, x11};
 use crate::font::FontRenderer;
 use crate::types::{Dimensions, Position, ThumbnailState};
 use crate::x11_utils::{get_pictformat, to_fixed, AppContext};

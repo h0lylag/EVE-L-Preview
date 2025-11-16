@@ -8,9 +8,6 @@ pub mod x11 {
     /// ARGB color depth (32-bit: 8 bits each for Alpha, Red, Green, Blue)
     pub const ARGB_DEPTH: u8 = 32;
     
-    /// RGB color depth (24-bit: 8 bits each for Red, Green, Blue, no alpha)
-    pub const RGB_DEPTH: u8 = 24;
-    
     /// Size of PID property value in bytes
     pub const PID_PROPERTY_SIZE: usize = 4;
     
@@ -25,22 +22,12 @@ pub mod x11 {
 pub mod input {
     /// Key press event value
     pub const KEY_PRESS: i32 = 1;
-    
-    /// Key release event value
-    pub const KEY_RELEASE: i32 = 0;
-    
-    /// Key repeat event value
-    pub const KEY_REPEAT: i32 = 2;
 }
 
 /// Mouse button constants
 pub mod mouse {
     /// Left mouse button number
     pub const BUTTON_LEFT: u8 = 1;
-    
-    /// Middle mouse button number
-    pub const BUTTON_MIDDLE: u8 = 2;
-    
     /// Right mouse button number
     pub const BUTTON_RIGHT: u8 = 3;
 }
@@ -74,9 +61,6 @@ pub mod positioning {
 
 /// Fixed-point arithmetic constants (X11 render transforms)
 pub mod fixed_point {
-    /// Fixed-point shift amount (16.16 format)
-    pub const SHIFT: u32 = 16;
-    
     /// Fixed-point multiplier for conversion (2^16)
     pub const MULTIPLIER: f32 = 65536.0;
 }
@@ -99,27 +83,6 @@ pub mod permissions {
     pub const ADD_TO_INPUT_GROUP: &str = "sudo usermod -a -G input $USER";
 }
 
-/// Log level strings
-pub mod logging {
-    /// Default log level
-    pub const DEFAULT_LEVEL: &str = "info";
-    
-    /// Trace log level string
-    pub const TRACE: &str = "trace";
-    
-    /// Debug log level string
-    pub const DEBUG: &str = "debug";
-    
-    /// Info log level string
-    pub const INFO: &str = "info";
-    
-    /// Warn log level string
-    pub const WARN: &str = "warn";
-    
-    /// Error log level string
-    pub const ERROR: &str = "error";
-}
-
 /// Configuration paths and filenames
 pub mod config {
     /// Application directory name under XDG config
@@ -127,15 +90,6 @@ pub mod config {
     
     /// Configuration filename
     pub const FILENAME: &str = "eve-l-preview.toml";
-}
-
-/// Environment variables
-pub mod env {
-    /// Environment variable for log level override
-    pub const LOG_LEVEL: &str = "LOG_LEVEL";
-    
-    /// Environment variable for custom font path (set at build time)
-    pub const FONT_PATH: &str = "FONT_PATH";
 }
 
 /// Configuration validation limits
