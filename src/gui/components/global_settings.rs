@@ -1,11 +1,11 @@
 //! Global settings component (applies to all profiles)
 
 use eframe::egui;
-use crate::config::profile::GlobalSettingsPhase2;
+use crate::config::profile::GlobalSettings;
 use crate::gui::constants::*;
 
 /// Renders global settings UI and returns true if changes were made
-pub fn ui(ui: &mut egui::Ui, global: &mut GlobalSettingsPhase2) -> bool {
+pub fn ui(ui: &mut egui::Ui, global: &mut GlobalSettings) -> bool {
     let mut changed = false;
     
     ui.group(|ui| {

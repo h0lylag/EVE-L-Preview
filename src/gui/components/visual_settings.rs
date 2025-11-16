@@ -79,14 +79,6 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile) -> bool {
             }
             // TODO: Add color picker button
         });
-        
-        ui.horizontal(|ui| {
-            ui.label("Text Background:");
-            if ui.text_edit_singleline(&mut profile.text_background).changed() {
-                changed = true;
-            }
-            // TODO: Add color picker button
-        });
     });
     
     changed

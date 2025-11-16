@@ -27,7 +27,7 @@ pub struct Config {
     #[serde(default)]
     pub manager: ManagerSettings,
     #[serde(default)]
-    pub global: GlobalSettingsPhase2,
+    pub global: GlobalSettings,
     #[serde(default = "default_profiles")]
     pub profiles: Vec<Profile>,
 }
@@ -49,7 +49,7 @@ pub struct ManagerSettings {
 
 /// Global daemon behavior (applies to all profiles)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GlobalSettingsPhase2 {
+pub struct GlobalSettings {
     #[serde(default = "default_log_level")]
     pub log_level: String,
     #[serde(default)]
@@ -82,8 +82,6 @@ pub struct Profile {
     pub text_y: i16,
     #[serde(rename = "text_foreground")]
     pub text_foreground: String,
-    #[serde(rename = "text_background")]
-    pub text_background: String,
     
     // Hotkey settings (cycle_group is per-profile)
     #[serde(default)]
@@ -131,7 +129,6 @@ fn default_profiles() -> Vec<Profile> {
         text_x: 10,
         text_y: 20,
         text_foreground: "#FFFFFFFF".to_string(),
-        text_background: "#7F000000".to_string(),
         cycle_group: Vec::new(),
         character_positions: HashMap::new(),
     }]
@@ -149,7 +146,7 @@ impl Default for ManagerSettings {
     }
 }
 
-impl Default for GlobalSettingsPhase2 {
+impl Default for GlobalSettings {
     fn default() -> Self {
         Self {
             log_level: default_log_level(),
@@ -254,7 +251,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             manager: ManagerSettings::default(),
-            global: GlobalSettingsPhase2::default(),
+            global: GlobalSettings::default(),
             profiles: default_profiles(),
         }
     }

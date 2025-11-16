@@ -188,7 +188,7 @@ pub fn run_preview_daemon() -> Result<()> {
     );
     
     // Initialize cycle state from config
-    let mut cycle_state = CycleState::new(persistent_state.global.hotkey_order.clone());
+    let mut cycle_state = CycleState::new(persistent_state.profile.cycle_group.clone());
     
     // Create channel for hotkey thread → main loop
     let (hotkey_tx, hotkey_rx) = mpsc::channel();
@@ -216,10 +216,10 @@ pub fn run_preview_daemon() -> Result<()> {
         .context("Failed to cache X11 atoms at startup")?;
     
     // Initialize font renderer with TrueType font (size from config)
-    let font_renderer = font::FontRenderer::from_system_font(persistent_state.global.text_size)
-        .context(format!("Failed to initialize font renderer with size {}", persistent_state.global.text_size))?;
+    let font_renderer = font::FontRenderer::from_system_font(persistent_state.profile.text_size as f32)
+        .context(format!("Failed to initialize font renderer with size {}", persistent_state.profile.text_size))?;
     info!(
-        size = persistent_state.global.text_size,
+        size = persistent_state.profile.text_size,
         "Font renderer initialized"
     );
     
