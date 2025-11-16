@@ -1,0 +1,310 @@
+//! Preview daemon - runs in background showing EVE window thumbnails
+
+use anyhow::{Context, Result};
+use std::collections::HashMap;
+use std::sync::mpsc;
+use tracing::{error, info, warn};
+use x11rb::connection::Connection;
+use x11rb::protocol::damage::ConnectionExt as DamageExt;
+use x11rb::protocol::xproto::*;
+
+use crate::config::PersistentState;
+use crate::constants::{self, eve, logging, paths, wine};
+use crate::cycle_state::CycleState;
+use crate::event_handler::handle_event;
+use crate::font;
+use crate::hotkeys::{self, spawn_listener, CycleCommand};
+use crate::persistence::SavedState;
+use crate::thumbnail::Thumbnail;
+use crate::types::Dimensions;
+use crate::x11_utils::{activate_window, is_window_eve, AppContext, CachedAtoms};
+
+fn check_and_create_window<'a>(
+    ctx: &AppContext<'a>,
+    persistent_state: &PersistentState,
+    window: Window,
+    state: &SavedState,
+) -> Result<Option<Thumbnail<'a>>> {
+    let pid_atom = ctx.conn.intern_atom(false, b"_NET_WM_PID")
+        .context("Failed to intern _NET_WM_PID atom")?
+        .reply()
+        .context("Failed to get reply for _NET_WM_PID atom")?
+        .atom;
+    if let Ok(prop) = ctx.conn
+        .get_property(false, window, pid_atom, AtomEnum::CARDINAL, 0, 1)
+        .context(format!("Failed to query _NET_WM_PID property for window {}", window))?
+        .reply()
+    {
+        if !prop.value.is_empty() {
+            let pid = u32::from_ne_bytes(prop.value[0..constants::x11::PID_PROPERTY_SIZE].try_into()
+                .context("Invalid PID property format (expected 4 bytes)")?);
+            
+            // Skip our own thumbnail windows
+            if pid == std::process::id() {
+                return Ok(None);
+            }
+            
+            if !std::fs::read_link(format!("{}", paths::PROC_EXE_FORMAT.replace("{}", &pid.to_string())))
+                .map(|x| {
+                    x.to_string_lossy().contains(wine::WINE64_PRELOADER)
+                        || x.to_string_lossy().contains(wine::WINE_PRELOADER)
+                })
+                .inspect_err(|e| {
+                    error!(
+                        pid = pid,
+                        error = ?e,
+                        "Cannot read /proc/{pid}/exe, assuming wine process"
+                    );
+                })
+                .unwrap_or(true)
+            {
+                return Ok(None); // Return if we can determine that the window is not running through wine.
+            }
+        } else {
+            warn!(
+                window = window,
+                "_NET_WM_PID not set, assuming wine process"
+            );
+        }
+    }
+
+    ctx.conn.change_window_attributes(
+        window,
+        &ChangeWindowAttributesAux::new().event_mask(EventMask::PROPERTY_CHANGE),
+    )
+    .context(format!("Failed to set event mask for window {}", window))?;
+
+    if let Some(eve_window) = is_window_eve(ctx.conn, window, ctx.atoms)
+        .context(format!("Failed to check if window {} is EVE client", window))? {
+        let character_name = eve_window.character_name().to_string();
+        
+        ctx.conn.change_window_attributes(
+            window,
+            &ChangeWindowAttributesAux::new()
+                .event_mask(EventMask::PROPERTY_CHANGE | EventMask::FOCUS_CHANGE),
+        )
+        .context(format!("Failed to set focus event mask for EVE window {} ('{}')", window, character_name))?;
+        
+        // Get saved position and dimensions for this character/window
+        let position = state.get_position(&character_name, window, &persistent_state.character_positions);
+        
+        // Get dimensions from CharacterSettings or use auto-detected defaults
+        let dimensions = if let Some(settings) = persistent_state.character_positions.get(&character_name) {
+            // If dimensions are 0 (not yet saved), auto-detect
+            if settings.dimensions.width == 0 || settings.dimensions.height == 0 {
+                let (w, h) = persistent_state.default_thumbnail_size(
+                    ctx.screen.width_in_pixels,
+                    ctx.screen.height_in_pixels,
+                );
+                Dimensions::new(w, h)
+            } else {
+                settings.dimensions
+            }
+        } else {
+            // Character not in settings yet - auto-detect
+            let (w, h) = persistent_state.default_thumbnail_size(
+                ctx.screen.width_in_pixels,
+                ctx.screen.height_in_pixels,
+            );
+            Dimensions::new(w, h)
+        };
+        
+        let thumbnail = Thumbnail::new(ctx, character_name.clone(), window, ctx.font_renderer, position, dimensions)
+            .context(format!("Failed to create thumbnail for '{}' (window {})", character_name, window))?;
+        info!(
+            window = window,
+            character = %character_name,
+            "Created thumbnail for EVE window"
+        );
+        Ok(Some(thumbnail))
+    } else {
+        Ok(None)
+    }
+}
+
+fn get_eves<'a>(
+    ctx: &AppContext<'a>,
+    persistent_state: &PersistentState,
+    state: &SavedState,
+) -> Result<HashMap<Window, Thumbnail<'a>>> {
+    let net_client_list = ctx.conn.intern_atom(false, b"_NET_CLIENT_LIST")
+        .context("Failed to intern _NET_CLIENT_LIST atom")?
+        .reply()
+        .context("Failed to get reply for _NET_CLIENT_LIST atom")?
+        .atom;
+    let prop = ctx.conn
+        .get_property(
+            false,
+            ctx.screen.root,
+            net_client_list,
+            AtomEnum::WINDOW,
+            0,
+            u32::MAX,
+        )
+        .context("Failed to query _NET_CLIENT_LIST property")?
+        .reply()
+        .context("Failed to get window list from X11 server")?;
+    let windows: Vec<u32> = prop
+        .value32()
+        .ok_or_else(|| anyhow::anyhow!("Invalid return from _NET_CLIENT_LIST"))?
+        .collect();
+
+    let mut eves = HashMap::new();
+    for w in windows {
+        if let Some(eve) = check_and_create_window(ctx, persistent_state, w, state)
+            .context(format!("Failed to process window {} during initial scan", w))? {
+            eves.insert(w, eve);
+        }
+    }
+    ctx.conn.flush()
+        .context("Failed to flush X11 connection after creating thumbnails")?;
+    Ok(eves)
+}
+
+pub fn run_preview_daemon() -> Result<()> {
+    // Connect to X11 first to get screen dimensions for smart config defaults
+    let (conn, screen_num) = x11rb::connect(None)
+        .context("Failed to connect to X11 server. Is DISPLAY set correctly?")?;
+    let screen = &conn.setup().roots[screen_num];
+    info!(
+        screen = screen_num,
+        width = screen.width_in_pixels,
+        height = screen.height_in_pixels,
+        "Connected to X11 server"
+    );
+
+    // Load config with screen-aware defaults
+    let mut persistent_state = PersistentState::load_with_screen(
+        screen.width_in_pixels,
+        screen.height_in_pixels,
+    );
+    let config = persistent_state.build_display_config();
+    info!(config = ?config, "Loaded display configuration");
+    
+    let mut session_state = SavedState::new();
+    info!(
+        count = persistent_state.character_positions.len(),
+        "Loaded character positions from config"
+    );
+    
+    // Initialize cycle state from config
+    let mut cycle_state = CycleState::new(persistent_state.global.hotkey_order.clone());
+    
+    // Create channel for hotkey thread → main loop
+    let (hotkey_tx, hotkey_rx) = mpsc::channel();
+    
+    // Spawn hotkey listener (optional - skip if permissions denied)
+    let _hotkey_handle = if hotkeys::check_permissions() {
+        match spawn_listener(hotkey_tx) {
+            Ok(handle) => {
+                info!(enabled = true, "Hotkey support enabled (Tab/Shift+Tab for character cycling)");
+                Some(handle)
+            }
+            Err(e) => {
+                error!(error = %e, "Failed to start hotkey listener");
+                hotkeys::print_permission_error();
+                None
+            }
+        }
+    } else {
+        hotkeys::print_permission_error();
+        None
+    };
+    
+    // Pre-cache atoms once at startup (eliminates roundtrip overhead)
+    let atoms = CachedAtoms::new(&conn)
+        .context("Failed to cache X11 atoms at startup")?;
+    
+    // Initialize font renderer with TrueType font (size from config)
+    let font_renderer = font::FontRenderer::from_system_font(persistent_state.global.text_size)
+        .context(format!("Failed to initialize font renderer with size {}", persistent_state.global.text_size))?;
+    info!(
+        size = persistent_state.global.text_size,
+        "Font renderer initialized"
+    );
+    
+    conn.damage_query_version(1, 1)
+        .context("Failed to query DAMAGE extension version. Is DAMAGE extension available?")?;
+    conn.change_window_attributes(
+        screen.root,
+        &ChangeWindowAttributesAux::new().event_mask(
+            EventMask::SUBSTRUCTURE_NOTIFY
+                | EventMask::BUTTON_PRESS
+                | EventMask::BUTTON_RELEASE
+                | EventMask::POINTER_MOTION,
+        ),
+    )
+    .context("Failed to set event mask on root window")?;
+
+    let ctx = AppContext {
+        conn: &conn,
+        screen,
+        config: &config,
+        atoms: &atoms,
+        font_renderer: &font_renderer,
+    };
+
+    let mut eves = get_eves(&ctx, &persistent_state, &session_state)
+        .context("Failed to get initial list of EVE windows")?;
+    
+    // Register initial windows with cycle state
+    for (window, thumbnail) in eves.iter() {
+        cycle_state.add_window(thumbnail.character_name.clone(), *window);
+    }
+    
+    info!("Preview daemon running");
+    
+    loop {
+        // Check for hotkey commands (non-blocking)
+        if let Ok(command) = hotkey_rx.try_recv() {
+            // Check if we should only allow hotkeys when EVE window is focused
+            let should_process = if persistent_state.global.hotkey_require_eve_focus {
+                crate::x11_utils::is_eve_window_focused(&conn, screen, &atoms)
+                    .inspect_err(|e| error!(error = %e, "Failed to check focused window"))
+                    .unwrap_or(false)
+            } else {
+                true
+            };
+            
+            if should_process {
+                info!(command = ?command, "Received hotkey command");
+                let result = match command {
+                    CycleCommand::Forward => cycle_state.cycle_forward(),
+                    CycleCommand::Backward => cycle_state.cycle_backward(),
+                };
+
+                if let Some((window, character_name)) = result {
+                    let display_name = if character_name.is_empty() {
+                        eve::LOGGED_OUT_DISPLAY_NAME
+                    } else {
+                        &character_name
+                    };
+                    info!(
+                        window = window,
+                        character = %display_name,
+                        "Activating window via hotkey"
+                    );
+                    if let Err(e) = activate_window(&conn, screen, &atoms, window) {
+                        error!(window = window, error = %e, "Failed to activate window");
+                    }
+                } else {
+                    warn!(active_windows = cycle_state.config_order().len(), "No window to activate, cycle state is empty");
+                }
+            } else {
+                info!(hotkey_require_eve_focus = persistent_state.global.hotkey_require_eve_focus, "Hotkey ignored, EVE window not focused (hotkey_require_eve_focus enabled)");
+            }
+        }
+
+        let event = conn.wait_for_event()
+            .context("Failed to wait for X11 event")?;
+        let _ = handle_event(
+            &ctx,
+            &mut persistent_state,
+            &mut eves,
+            event,
+            &mut session_state,
+            &mut cycle_state,
+            check_and_create_window
+        ).inspect_err(|err| error!(error = ?err, "Event handling error"));
+    }
+}

@@ -19,3 +19,8 @@ toml_edit = "0.19"
 dirs = "5.0"
 evdev = "0.12"
 fontdue = "0.9"
+clap = { version = "4.5", features = ["derive"] }
+
+# GUI dependencies (only used in default GUI mode, not in --preview daemon)
+eframe = "0.30"
+rfd = "0.15"  # Native file dialogs

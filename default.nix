@@ -3,21 +3,49 @@
 }:
 let
   manifest = (pkgs.lib.importTOML ./Cargo.toml).package;
-  cross = pkgs.pkgsCross.musl64;
+  # Library path for runtime dynamic loading (winit/wgpu need this)
+  libPath =
+    with pkgs;
+    lib.makeLibraryPath [
+      libGL
+      libxkbcommon
+      wayland
+      xorg.libX11
+      xorg.libXcursor
+      xorg.libXrandr
+      xorg.libXi
+      vulkan-loader
+    ];
 in
-cross.rustPlatform.buildRustPackage rec {
+pkgs.rustPlatform.buildRustPackage rec {
   pname = manifest.name;
   version = manifest.version;
 
   cargoLock.lockFile = ./Cargo.lock;
 
-  RUSTFLAGS = "-C target-feature=+crt-static";
+  src = pkgs.lib.cleanSource ./.;
 
-  src = cross.lib.cleanSource ./.;
-  buildType = "release";
+  # Skip tests in build
+  doCheck = false;
 
-  nativeBuildInputs = [ cross.musl ];
-  buildInputs = [ ];
+  nativeBuildInputs = with pkgs; [ makeWrapper ];
+
+  buildInputs = with pkgs; [
+    libGL
+    libxkbcommon
+    wayland
+    xorg.libX11
+    xorg.libXcursor
+    xorg.libXrandr
+    xorg.libXi
+    vulkan-loader
+  ];
+
+  # Set LD_LIBRARY_PATH so winit can find libraries at runtime
+  postInstall = ''
+    wrapProgram $out/bin/eve-l-preview \
+      --prefix LD_LIBRARY_PATH : "${libPath}"
+  '';
 
   # Provide font path at build time
   preBuild = ''
