@@ -25,53 +25,48 @@ Works on Wayland as long as you're running EVE through Wine/Proton in XWayland m
 - Optional edge/corner snapping when dragging
 - Hide all previews when you alt-tab out of EVE
 - Uses almost no RAM or CPU
-- Configure everything via a TOML file or environment variables
+- Configure everything via a JSON file or environment variables
 
 ## Configuration
 
-The config file lives at `~/.config/eve-l-preview/eve-l-preview.toml` and gets created automatically the first time you run the program. You can edit it to change colors, sizes, positions, whatever. Environment variables will override the TOML settings if you want to test something quickly.
+The config file lives at `~/.config/eve-l-preview/eve-l-preview.json` and gets created automatically the first time you run the program. You can edit it to change colors, sizes, positions, whatever. Environment variables will override the JSON settings if you want to test something quickly.
 
 ### Example config
 
-```toml
-# How see-through the previews are (0-100)
-opacity_percent = 80
-
-# Border around the active client's preview
-border_size = 5
-border_color = "#7FFF0000"  # Red with 50% transparency
-
-# Character name positioning and color
-text_x = 10
-text_y = 10
-text_color = "#FFFFFFFF"  # White
-text_size = 18
-
-# Hide previews when you're not in an EVE window
-hide_when_no_focus = false
-
-# Snap previews to edges when dragging (pixels)
-snap_threshold = 15
-
-# Only allow Tab cycling when an EVE window is focused
-hotkey_require_eve_focus = true
-
-# Tab/Shift+Tab cycling order
-# Put your character names here in the order you want to cycle through them
-hotkey_order = ["Main", "Hauler Alt", "Scout"]
-
-# Per-character settings (these get saved automatically when you drag previews around)
-[characters."Main"]
-x = 100
-y = 200
-width = 480
-height = 270
-
-[characters."Hauler Alt"]
-x = 600
-y = 200
-width = 480
-height = 270
+```json
+{
+	"manager": {
+		"selected_profile": "default",
+		"window_width": 600,
+		"window_height": 800
+	},
+	"global": {
+		"log_level": "info",
+		"minimize_clients_on_switch": false
+	},
+	"profiles": {
+		"default": {
+			"description": "Main fleet",
+			"opacity_percent": 80,
+			"border_enabled": true,
+			"border_size": 5,
+			"border_color": "#7FFF0000",
+			"text_size": 18,
+			"text_x": 10,
+			"text_y": 10,
+			"text_foreground": "#FFFFFFFF",
+			"text_background": "#7F000000",
+			"hide_when_no_focus": false,
+			"snap_threshold": 15,
+			"hotkey_require_eve_focus": true,
+			"cycle_group": ["Main", "Hauler Alt", "Scout"],
+			"characters": {
+				"Main": { "x": 100, "y": 200, "width": 480, "height": 270 },
+				"Hauler Alt": { "x": 600, "y": 200, "width": 480, "height": 270 }
+			}
+		}
+	}
+}
 ```
 
 ### Config options

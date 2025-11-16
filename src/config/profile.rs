@@ -89,8 +89,7 @@ pub struct Profile {
     pub cycle_group: Vec<String>,
     
     // Per-profile character positions and dimensions
-    // Skip serializing if empty to avoid creating empty [profiles.characters] table
-    #[serde(rename = "characters", default, skip_serializing_if = "HashMap::is_empty")]
+    #[serde(rename = "characters", default)]
     pub character_positions: HashMap<String, CharacterSettings>,
 }
 
@@ -175,7 +174,7 @@ impl Config {
         path
     }
     
-    /// Load configuration from TOML file or create default
+    /// Load configuration from JSON file or create default
     pub fn load() -> Result<Self> {
         let config_path = Self::path();
         
@@ -189,14 +188,14 @@ impl Config {
         let contents = fs::read_to_string(&config_path)
             .with_context(|| format!("Failed to read config from {:?}", config_path))?;
         
-        let config: Config = toml::from_str(&contents)
-            .with_context(|| format!("Failed to parse TOML from {:?}", config_path))?;
+        let config: Config = serde_json::from_str(&contents)
+            .with_context(|| format!("Failed to parse JSON from {:?}", config_path))?;
         
         info!("Loaded config with {} profile(s)", config.profiles.len());
         Ok(config)
     }
     
-    /// Save configuration to TOML file using chosen strategy
+    /// Save configuration to JSON file using chosen strategy
     pub fn save_with_strategy(&self, strategy: SaveStrategy) -> Result<()> {
         let config_path = Self::path();
         
@@ -211,13 +210,16 @@ impl Config {
                 let mut clone = self.clone();
                 if config_path.exists() {
                     if let Ok(contents) = fs::read_to_string(&config_path) {
-                        if let Ok(existing_config) = toml::from_str::<Config>(&contents) {
+                        if let Ok(existing_config) = serde_json::from_str::<Config>(&contents) {
                             for profile_to_save in clone.profiles.iter_mut() {
                                 if let Some(existing_profile) = existing_config.profiles.iter()
                                     .find(|p| p.name == profile_to_save.name)
                                 {
+                                    // Profile exists on disk - preserve its character positions
                                     profile_to_save.character_positions = existing_profile.character_positions.clone();
                                 }
+                                // If profile doesn't exist on disk (new/duplicated profile),
+                                // keep the character_positions from the in-memory profile (from clone/duplication)
                             }
                         }
                     }
@@ -227,10 +229,10 @@ impl Config {
             SaveStrategy::OverwriteCharacterPositions => self.clone(),
         };
         
-        let toml_string = toml::to_string_pretty(&config_to_save)
-            .context("Failed to serialize config to TOML")?;
+        let json_string = serde_json::to_string_pretty(&config_to_save)
+            .context("Failed to serialize config to JSON")?;
         
-        fs::write(&config_path, toml_string)
+        fs::write(&config_path, json_string)
             .with_context(|| format!("Failed to write config to {:?}", config_path))?;
         
         info!("Saved config to {:?}", config_path);

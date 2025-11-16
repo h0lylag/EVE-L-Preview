@@ -89,7 +89,7 @@ pub mod config {
     pub const APP_DIR: &str = "eve-l-preview";
     
     /// Configuration filename
-    pub const FILENAME: &str = "eve-l-preview.toml";
+    pub const FILENAME: &str = "eve-l-preview.json";
 }
 
 /// Configuration validation limits
