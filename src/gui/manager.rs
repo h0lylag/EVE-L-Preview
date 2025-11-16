@@ -204,18 +204,22 @@ impl ManagerApp {
     }
 
     fn hide_window(&mut self, ctx: &egui::Context) {
-        if self.window_visible {
-            info!("Hiding manager window to tray");
+        if !self.window_visible {
+            return;
         }
+        info!("Hiding manager window to tray");
         self.window_visible = false;
         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
     }
 
     fn show_window(&mut self, ctx: &egui::Context) {
-        if !self.window_visible {
-            info!("Showing manager window from tray");
+        if self.window_visible {
+            return;
         }
+        info!("Showing manager window from tray");
         self.window_visible = true;
+        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
         ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
     }
