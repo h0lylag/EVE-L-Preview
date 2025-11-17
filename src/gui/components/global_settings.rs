@@ -81,6 +81,19 @@ pub fn ui(ui: &mut egui::Ui, global: &mut GlobalSettings) -> bool {
         
         ui.add_space(ITEM_SPACING);
         
+        // Preserve thumbnail position on character swap
+        if ui.checkbox(&mut global.preserve_thumbnail_position_on_swap, 
+            "Keep thumbnail position when switching characters").changed() {
+            changed = true;
+        }
+        
+        ui.label(egui::RichText::new(
+            "New characters inherit thumbnail position from the logged-out character")
+            .small()
+            .weak());
+        
+        ui.add_space(ITEM_SPACING);
+        
         // Snap threshold
         ui.horizontal(|ui| {
             ui.label("Snap Threshold:");

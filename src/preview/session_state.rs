@@ -11,18 +11,12 @@ pub struct SessionState {
     /// Used for logged-out windows that show "EVE" without character name
     /// Window IDs are ephemeral and don't survive X11 server restarts
     pub window_positions: HashMap<Window, Position>,
-    
-    /// TODO: Move to PersistentState - behavior for new characters on existing windows
-    /// - false: New character spawns centered (current behavior)
-    /// - true: New character inherits window's last position
-    pub inherit_window_position: bool,
 }
 
 impl Default for SessionState {
     fn default() -> Self {
         Self {
             window_positions: HashMap::new(),
-            inherit_window_position: false,
         }
     }
 }
@@ -33,13 +27,14 @@ impl SessionState {
     }
 
     /// Get initial position for a thumbnail
-    /// Priority: character position (from persistent state) > window position (if enabled) > None (use center)
-    /// Window position only used for logged-out windows or if inherit_window_position is enabled
+    /// Priority: character position (from persistent state) > window position (if enabled) > None (use EVE window + offset)
+    /// Window position only used for logged-out windows or if preserve_thumbnail_position_on_swap is enabled
     pub fn get_position(
         &self,
         character_name: &str,
         window: Window,
         character_positions: &HashMap<String, CharacterSettings>,
+        preserve_position_on_swap: bool,
     ) -> Option<Position> {
         // If character has a name (not just "EVE"), check character position from config
         if !character_name.is_empty() {
@@ -48,16 +43,15 @@ impl SessionState {
                 return Some(settings.position());
             }
             
-            // TODO: When config option is added, check inherit_window_position here
-            // For now, new character always spawns centered
-            if self.inherit_window_position {
+            // New character with no saved position → check if we should inherit window position
+            if preserve_position_on_swap {
                 if let Some(&pos) = self.window_positions.get(&window) {
                     info!(character = %character_name, position = ?pos, "Inheriting window position for new character");
                     return Some(pos);
                 }
             }
             
-            // New character with no saved position → return None (will center)
+            // New character with no saved position and no inheritance → return None (use EVE window + offset)
             return None;
         }
         
@@ -87,7 +81,7 @@ mod tests {
         let mut char_positions = HashMap::new();
         char_positions.insert("Alice".to_string(), CharacterSettings::new(100, 200, 240, 135));
         
-        let pos = state.get_position("Alice", 123, &char_positions);
+        let pos = state.get_position("Alice", 123, &char_positions, true);
         assert_eq!(pos, Some(Position::new(100, 200)));
     }
 
@@ -95,12 +89,11 @@ mod tests {
     fn test_get_position_new_character_no_inherit() {
         let state = SessionState {
             window_positions: HashMap::from([(456, Position::new(300, 400))]),
-            inherit_window_position: false,
         };
         let char_positions = HashMap::new();
         
-        // New character "Bob" with window 456 that has position → should return None (center)
-        let pos = state.get_position("Bob", 456, &char_positions);
+        // New character "Bob" with window 456 that has position but preserve disabled → should return None (EVE window + offset)
+        let pos = state.get_position("Bob", 456, &char_positions, false);
         assert_eq!(pos, None);
     }
 
@@ -108,12 +101,11 @@ mod tests {
     fn test_get_position_new_character_with_inherit() {
         let state = SessionState {
             window_positions: HashMap::from([(789, Position::new(500, 600))]),
-            inherit_window_position: true,
         };
         let char_positions = HashMap::new();
         
-        // New character "Charlie" with inherit enabled → should use window position
-        let pos = state.get_position("Charlie", 789, &char_positions);
+        // New character "Charlie" with preserve enabled → should use window position
+        let pos = state.get_position("Charlie", 789, &char_positions, true);
         assert_eq!(pos, Some(Position::new(500, 600)));
     }
 
@@ -121,12 +113,11 @@ mod tests {
     fn test_get_position_new_character_inherit_but_no_window_position() {
         let state = SessionState {
             window_positions: HashMap::new(),
-            inherit_window_position: true,
         };
         let char_positions = HashMap::new();
         
-        // inherit enabled but window 999 has no saved position → None (center)
-        let pos = state.get_position("Diana", 999, &char_positions);
+        // preserve enabled but window 999 has no saved position → None (EVE window + offset)
+        let pos = state.get_position("Diana", 999, &char_positions, true);
         assert_eq!(pos, None);
     }
 
@@ -134,12 +125,11 @@ mod tests {
     fn test_get_position_logged_out_window() {
         let state = SessionState {
             window_positions: HashMap::from([(111, Position::new(700, 800))]),
-            inherit_window_position: false,
         };
         let char_positions = HashMap::new();
         
-        // Empty character name (logged-out "EVE" window) → use window position
-        let pos = state.get_position("", 111, &char_positions);
+        // Empty character name (logged-out "EVE" window) → use window position (preserve flag doesn't matter for logged-out)
+        let pos = state.get_position("", 111, &char_positions, false);
         assert_eq!(pos, Some(Position::new(700, 800)));
     }
 
@@ -148,8 +138,8 @@ mod tests {
         let state = SessionState::new();
         let char_positions = HashMap::new();
         
-        // Logged-out window with no saved position → None (center)
-        let pos = state.get_position("", 222, &char_positions);
+        // Logged-out window with no saved position → None (EVE window + offset)
+        let pos = state.get_position("", 222, &char_positions, true);
         assert_eq!(pos, None);
     }
 
@@ -157,13 +147,12 @@ mod tests {
     fn test_get_position_character_priority_over_window() {
         let mut state = SessionState::new();
         state.window_positions.insert(333, Position::new(900, 1000));
-        state.inherit_window_position = true;
         
         let mut char_positions = HashMap::new();
         char_positions.insert("Eve".to_string(), CharacterSettings::new(1100, 1200, 240, 135));
         
-        // Character position should take priority even with inherit enabled
-        let pos = state.get_position("Eve", 333, &char_positions);
+        // Character position should take priority even with preserve enabled
+        let pos = state.get_position("Eve", 333, &char_positions, true);
         assert_eq!(pos, Some(Position::new(1100, 1200)));
     }
 

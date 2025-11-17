@@ -93,7 +93,12 @@ fn check_and_create_window<'a>(
         .context(format!("Failed to set focus event mask for EVE window {} ('{}')", window, character_name))?;
         
         // Get saved position and dimensions for this character/window
-        let position = state.get_position(&character_name, window, &persistent_state.character_positions);
+        let position = state.get_position(
+            &character_name, 
+            window, 
+            &persistent_state.character_positions,
+            persistent_state.global.preserve_thumbnail_position_on_swap,
+        );
         
         // Get dimensions from CharacterSettings or use auto-detected defaults
         let dimensions = if let Some(settings) = persistent_state.character_positions.get(&character_name) {

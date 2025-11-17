@@ -28,5 +28,7 @@ pkgs.rustPlatform.buildRustPackage rec {
     xorg.libX11
     xorg.libXfixes
     xorg.libXdamage
+    gtk3
+    libappindicator
   ];
 }
