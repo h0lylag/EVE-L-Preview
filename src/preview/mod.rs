@@ -19,7 +19,7 @@ use crate::config::PersistentState;
 use crate::constants::{self, eve, paths, wine};
 use crate::hotkeys::{self, spawn_listener, CycleCommand};
 use crate::types::Dimensions;
-use crate::x11_utils::{activate_window, is_window_eve, minimize_window, AppContext, CachedAtoms};
+use crate::x11_utils::{activate_window, is_window_eve, is_window_minimized, minimize_window, AppContext, CachedAtoms};
 
 use cycle_state::CycleState;
 use event_handler::handle_event;
@@ -121,8 +121,16 @@ fn check_and_create_window<'a>(
             Dimensions::new(w, h)
         };
         
-        let thumbnail = Thumbnail::new(ctx, character_name.clone(), window, ctx.font_renderer, position, dimensions)
+        let mut thumbnail = Thumbnail::new(ctx, character_name.clone(), window, ctx.font_renderer, position, dimensions)
             .context(format!("Failed to create thumbnail for '{}' (window {})", character_name, window))?;
+        if is_window_minimized(ctx.conn, window, ctx.atoms)
+            .context(format!("Failed to query minimized state for window {}", window))?
+        {
+            debug!(window = window, character = %character_name, "Window minimized at startup");
+            thumbnail
+                .minimized()
+                .context(format!("Failed to set minimized state for '{}'", character_name))?;
+        }
         info!(
             window = window,
             character = %character_name,

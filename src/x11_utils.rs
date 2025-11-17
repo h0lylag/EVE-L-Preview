@@ -28,6 +28,7 @@ pub struct CachedAtoms {
     pub net_wm_state_hidden: Atom,
     pub net_active_window: Atom,
     pub wm_change_state: Atom,
+    pub wm_state: Atom,
 }
 
 impl CachedAtoms {
@@ -63,6 +64,11 @@ impl CachedAtoms {
                 .context("Failed to intern WM_CHANGE_STATE atom")?
                 .reply()
                 .context("Failed to get reply for WM_CHANGE_STATE atom")?
+                .atom,
+            wm_state: conn.intern_atom(false, b"WM_STATE")
+                .context("Failed to intern WM_STATE atom")?
+                .reply()
+                .context("Failed to get reply for WM_STATE atom")?
                 .atom,
         })
     }
@@ -122,6 +128,71 @@ pub fn is_window_eve(conn: &RustConnection, window: Window, atoms: &CachedAtoms)
     } else {
         None
     })
+}
+
+/// Check whether the given EVE client window is currently minimized/iconified
+pub fn is_window_minimized(
+    conn: &RustConnection,
+    window: Window,
+    atoms: &CachedAtoms,
+) -> Result<bool> {
+    // Prefer modern _NET_WM_STATE_HIDDEN flag
+    let net_state_cookie = conn
+        .get_property(false, window, atoms.net_wm_state, AtomEnum::ATOM, 0, 1024)
+        .context(format!("Failed to query _NET_WM_STATE for window {}", window))?;
+    match net_state_cookie.reply() {
+        Ok(reply) => {
+            if let Some(mut values) = reply.value32() {
+                if values.any(|state| state == atoms.net_wm_state_hidden) {
+                    return Ok(true);
+                }
+            }
+        }
+        Err(ReplyError::X11Error(err))
+            if err.error_kind == x11rb::protocol::ErrorKind::Window =>
+        {
+            debug!(window = window, "Window destroyed before _NET_WM_STATE reply");
+            return Ok(false);
+        }
+        Err(err) => {
+            return Err(err)
+                .context(format!("Failed to get _NET_WM_STATE reply for window {}", window));
+        }
+    }
+
+    // Fallback to ICCCM WM_STATE / IconicState detection
+    let wm_state_cookie = conn
+        .get_property(
+            false,
+            window,
+            atoms.wm_state,
+            atoms.wm_state,
+            0,
+            2,
+        )
+        .context(format!("Failed to query WM_STATE for window {}", window))?;
+    match wm_state_cookie.reply() {
+        Ok(reply) => {
+            if let Some(mut values) = reply.value32() {
+                if let Some(state) = values.next() {
+                    if state == x11::ICONIC_STATE {
+                        return Ok(true);
+                    }
+                }
+            }
+        }
+        Err(ReplyError::X11Error(err))
+            if err.error_kind == x11rb::protocol::ErrorKind::Window =>
+        {
+            debug!(window = window, "Window destroyed before WM_STATE reply");
+            return Ok(false);
+        }
+        Err(err) => {
+            return Err(err).context(format!("Failed to get WM_STATE reply for window {}", window));
+        }
+    }
+
+    Ok(false)
 }
 
 /// Check if the currently focused window is an EVE client
