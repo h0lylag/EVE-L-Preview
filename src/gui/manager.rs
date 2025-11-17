@@ -526,7 +526,7 @@ fn create_tray_icon(_tray_tx: Sender<TrayCommand>) -> Result<tray_icon::TrayIcon
 
 #[cfg(target_os = "linux")]
 fn load_tray_icon() -> Result<Icon> {
-    let icon_bytes = include_bytes!("../../assets/tray-icon.png");
+    let icon_bytes = include_bytes!("../../assets/icon.png");
     let decoder = png::Decoder::new(Cursor::new(icon_bytes));
     let mut reader = decoder.read_info()?;
     let mut buf = vec![0; reader.output_buffer_size()];
@@ -557,12 +557,71 @@ fn load_tray_icon() -> Result<Icon> {
         .context("Failed to create icon from RGBA data")
 }
 
+/// Load window icon from embedded PNG (same as tray icon)
+#[cfg(target_os = "linux")]
+fn load_window_icon() -> Result<egui::IconData> {
+    let icon_bytes = include_bytes!("../../assets/icon.png");
+    let decoder = png::Decoder::new(Cursor::new(icon_bytes));
+    let mut reader = decoder.read_info()?;
+    let mut buf = vec![0; reader.output_buffer_size()];
+    let info = reader.next_frame(&mut buf)?;
+    let rgba = &buf[..info.buffer_size()];
+
+    // egui IconData expects RGBA format
+    let rgba_vec = match info.color_type {
+        png::ColorType::Rgba => rgba.to_vec(),
+        png::ColorType::Rgb => {
+            // Convert RGB to RGBA
+            let mut rgba_data = Vec::with_capacity(rgba.len() / 3 * 4);
+            for chunk in rgba.chunks_exact(3) {
+                rgba_data.extend_from_slice(chunk);
+                rgba_data.push(0xFF); // Add full alpha
+            }
+            rgba_data
+        }
+        other => {
+            return Err(anyhow!(
+                "Unsupported window icon color type {:?} (expected RGB or RGBA)",
+                other
+            ));
+        }
+    };
+
+    Ok(egui::IconData {
+        rgba: rgba_vec,
+        width: info.width,
+        height: info.height,
+    })
+}
+
 pub fn run_gui() -> Result<()> {
+    #[cfg(target_os = "linux")]
+    let icon = match load_window_icon() {
+        Ok(icon_data) => {
+            info!("Loaded window icon ({} bytes, {}x{})", 
+                icon_data.rgba.len(), icon_data.width, icon_data.height);
+            Some(icon_data)
+        }
+        Err(e) => {
+            error!("Failed to load window icon: {}", e);
+            None
+        }
+    };
+    
+    #[cfg(not(target_os = "linux"))]
+    let icon = None;
+    
+    let mut viewport_builder = egui::ViewportBuilder::default()
+        .with_inner_size([WINDOW_WIDTH, WINDOW_HEIGHT])
+        .with_min_inner_size([WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT])
+        .with_title("EVE-L Preview Manager");
+    
+    if let Some(icon_data) = icon {
+        viewport_builder = viewport_builder.with_icon(icon_data);
+    }
+    
     let options = NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([WINDOW_WIDTH, WINDOW_HEIGHT])
-            .with_min_inner_size([WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT])
-            .with_title("EVE-L Preview Manager"),
+        viewport: viewport_builder,
         ..Default::default()
     };
 
