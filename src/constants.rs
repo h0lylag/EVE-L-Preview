@@ -16,6 +16,12 @@ pub mod x11 {
     
     /// Source indication for _NET_ACTIVE_WINDOW (2 = pager/direct user action)
     pub const ACTIVE_WINDOW_SOURCE_PAGER: u32 = 2;
+    
+    /// _NET_WM_STATE action: add/set property (1)
+    pub const NET_WM_STATE_ADD: u32 = 1;
+
+    /// WM_CHANGE_STATE iconic value (requests the WM to minimize)
+    pub const ICONIC_STATE: u32 = 3;
 }
 
 /// Input event constants (from evdev)

@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use tracing::debug;
+use x11rb::errors::ReplyError;
 use x11rb::connection::Connection;
 use x11rb::protocol::render::{ConnectionExt as RenderExt, Fixed, Pictformat};
 use x11rb::protocol::xproto::*;
@@ -26,6 +27,7 @@ pub struct CachedAtoms {
     pub net_wm_state: Atom,
     pub net_wm_state_hidden: Atom,
     pub net_active_window: Atom,
+    pub wm_change_state: Atom,
 }
 
 impl CachedAtoms {
@@ -56,6 +58,11 @@ impl CachedAtoms {
                 .context("Failed to intern _NET_ACTIVE_WINDOW atom")?
                 .reply()
                 .context("Failed to get reply for _NET_ACTIVE_WINDOW atom")?
+                .atom,
+            wm_change_state: conn.intern_atom(false, b"WM_CHANGE_STATE")
+                .context("Failed to intern WM_CHANGE_STATE atom")?
+                .reply()
+                .context("Failed to get reply for WM_CHANGE_STATE atom")?
                 .atom,
         })
     }
@@ -92,11 +99,21 @@ pub fn get_pictformat(conn: &RustConnection, depth: u8, alpha: bool) -> Result<P
 }
 
 pub fn is_window_eve(conn: &RustConnection, window: Window, atoms: &CachedAtoms) -> Result<Option<EveWindowType>> {
-    let name_prop = conn
+    let cookie = conn
         .get_property(false, window, atoms.wm_name, AtomEnum::STRING, 0, 1024)
-        .context(format!("Failed to query WM_NAME property for window {}", window))?
-        .reply()
-        .context(format!("Failed to get WM_NAME reply for window {}", window))?;
+        .context(format!("Failed to query WM_NAME property for window {}", window))?;
+    let name_prop = match cookie.reply() {
+        Ok(reply) => reply,
+        Err(ReplyError::X11Error(err))
+            if err.error_kind == x11rb::protocol::ErrorKind::Window =>
+        {
+            debug!(window = window, "Window destroyed before WM_NAME reply, skipping");
+            return Ok(None);
+        }
+        Err(err) => {
+            return Err(err).context(format!("Failed to get WM_NAME reply for window {}", window));
+        }
+    };
     let title = String::from_utf8_lossy(&name_prop.value).into_owned();
     Ok(if let Some(name) = title.strip_prefix(eve::WINDOW_TITLE_PREFIX) {
         Some(EveWindowType::LoggedIn(name.to_string()))
@@ -176,5 +193,67 @@ pub fn activate_window(
 
     conn.flush()
         .context("Failed to flush X11 connection after window activation")?;
+    Ok(())
+}
+
+/// Minimize (hide) an X11 window using _NET_WM_STATE
+pub fn minimize_window(
+    conn: &RustConnection,
+    screen: &Screen,
+    atoms: &CachedAtoms,
+    window: Window,
+) -> Result<()> {
+    use x11rb::protocol::xproto::*;
+
+    // Send _NET_WM_STATE client message to add _NET_WM_STATE_HIDDEN
+    let event = ClientMessageEvent {
+        response_type: CLIENT_MESSAGE_EVENT,
+        format: 32,
+        sequence: 0,
+        window,
+        type_: atoms.net_wm_state,
+        data: ClientMessageData::from([
+            x11::NET_WM_STATE_ADD, // Action: 1 = add
+            atoms.net_wm_state_hidden, // First property to alter
+            0, // Second property (unused)
+            x11::ACTIVE_WINDOW_SOURCE_PAGER, // Source indication
+            0,
+        ]),
+    };
+
+    conn.send_event(
+        false,
+        screen.root,
+        EventMask::SUBSTRUCTURE_NOTIFY | EventMask::SUBSTRUCTURE_REDIRECT,
+        &event,
+    )
+    .context(format!("Failed to send _NET_WM_STATE minimize event for window {}", window))?;
+
+    // Fallback for WMs that expect ICCCM-style iconify requests (WM_CHANGE_STATE)
+    let change_state_event = ClientMessageEvent {
+        response_type: CLIENT_MESSAGE_EVENT,
+        format: 32,
+        sequence: 0,
+        window,
+        type_: atoms.wm_change_state,
+        data: ClientMessageData::from([
+            x11::ICONIC_STATE,
+            0,
+            0,
+            0,
+            0,
+        ]),
+    };
+
+    conn.send_event(
+        false,
+        screen.root,
+        EventMask::SUBSTRUCTURE_NOTIFY | EventMask::SUBSTRUCTURE_REDIRECT,
+        &change_state_event,
+    )
+    .context(format!("Failed to send WM_CHANGE_STATE iconify event for window {}", window))?;
+
+    conn.flush()
+        .context("Failed to flush X11 connection after window minimize")?;
     Ok(())
 }

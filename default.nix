@@ -33,6 +33,7 @@ pkgs.rustPlatform.buildRustPackage rec {
   nativeBuildInputs = with pkgs; [
     makeWrapper
     pkg-config
+    mold # Fast linker - 2-5x faster than ld
   ];
 
   buildInputs = with pkgs; [
@@ -58,4 +59,8 @@ pkgs.rustPlatform.buildRustPackage rec {
   preBuild = ''
     export FONT_PATH="${pkgs.nerd-fonts.roboto-mono}/share/fonts/truetype/NerdFonts/RobotoMono/RobotoMonoNerdFont-Regular.ttf"
   '';
+
+  # Speed optimizations
+  CARGO_BUILD_JOBS = "30"; # Adjust to your CPU core count
+  #RUSTFLAGS = "-C link-arg=-fuse-ld=mold"; # Use mold linker
 }

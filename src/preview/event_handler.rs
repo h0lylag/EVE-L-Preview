@@ -9,7 +9,7 @@ use tracing::{debug, info, trace, warn};
 use crate::config::PersistentState;
 use crate::constants::mouse;
 use crate::types::{Position, ThumbnailState};
-use crate::x11_utils::{is_window_eve, AppContext};
+use crate::x11_utils::{is_window_eve, minimize_window, AppContext};
 
 use super::cycle_state::CycleState;
 use super::session_state::SessionState;
@@ -161,14 +161,33 @@ fn handle_button_release(
     session_state: &mut SessionState,
 ) -> Result<()> {
     debug!(x = event.root_x, y = event.root_y, detail = event.detail, "ButtonRelease received");
-    if let Some((_, thumbnail)) = eves
-        .iter_mut()
-        .find(|(_, thumb)| thumb.is_hovered(event.root_x, event.root_y))
-    {
+    
+    // First pass: identify the hovered thumbnail by the EVE window key
+    let clicked_key = eves
+        .iter()
+        .find(|(_, thumb)| {
+            let hovered = thumb.is_hovered(event.root_x, event.root_y);
+            if hovered {
+                debug!(window = thumb.window, character = %thumb.character_name, "Found hovered thumbnail");
+            }
+            hovered
+        })
+        .map(|(eve_window, _)| *eve_window);
+    
+    let Some(clicked_key) = clicked_key else {
+        debug!("No thumbnail hovered at release position");
+        return Ok(());
+    };
+    
+    let mut clicked_src: Option<Window> = None;
+    let is_left_click = event.detail == mouse::BUTTON_LEFT;
+    
+    if let Some(thumbnail) = eves.get_mut(&clicked_key) {
         debug!(window = thumbnail.window, character = %thumbnail.character_name, "ButtonRelease on thumbnail");
-        // Left-click focuses the window
-        // (dragging is only enabled for right-click, so left-click never drags)
-        if event.detail == mouse::BUTTON_LEFT {
+        clicked_src = Some(thumbnail.src);
+        
+        // Left-click focuses the window (dragging is right-click only)
+        if is_left_click {
             thumbnail.focus()
                 .context(format!("Failed to focus window for '{}'", thumbnail.character_name))?;
         }
@@ -197,6 +216,23 @@ fn handle_button_release(
         
         thumbnail.input_state.dragging = false;
     }
+    
+    // After releasing mutable borrow, optionally minimize other EVE clients
+    if is_left_click
+        && persistent_state.global.minimize_clients_on_switch
+        && let Some(clicked_src) = clicked_src
+    {
+        for other_window in eves
+            .values()
+            .filter(|t| t.src != clicked_src)
+            .map(|t| t.src)
+        {
+            if let Err(e) = minimize_window(ctx.conn, ctx.screen, ctx.atoms, other_window) {
+                debug!(error = ?e, window = other_window, "Failed to minimize window");
+            }
+        }
+    }
+    
     Ok(())
 }
 

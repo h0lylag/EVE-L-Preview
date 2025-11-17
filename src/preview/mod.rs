@@ -10,7 +10,7 @@ mod thumbnail;
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::sync::mpsc;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use x11rb::connection::Connection;
 use x11rb::protocol::damage::ConnectionExt as DamageExt;
 use x11rb::protocol::xproto::*;
@@ -19,7 +19,7 @@ use crate::config::PersistentState;
 use crate::constants::{self, eve, paths, wine};
 use crate::hotkeys::{self, spawn_listener, CycleCommand};
 use crate::types::Dimensions;
-use crate::x11_utils::{activate_window, is_window_eve, AppContext, CachedAtoms};
+use crate::x11_utils::{activate_window, is_window_eve, minimize_window, AppContext, CachedAtoms};
 
 use cycle_state::CycleState;
 use event_handler::handle_event;
@@ -298,6 +298,18 @@ pub fn run_preview_daemon() -> Result<()> {
                     );
                     if let Err(e) = activate_window(&conn, screen, &atoms, window) {
                         error!(window = window, error = %e, "Failed to activate window");
+                    } else if persistent_state.global.minimize_clients_on_switch {
+                        // Minimize all other EVE clients after successful activation
+                        let other_windows: Vec<Window> = eves
+                            .keys()
+                            .copied()
+                            .filter(|w| *w != window)
+                            .collect();
+                        for other_window in other_windows {
+                            if let Err(e) = minimize_window(&conn, screen, &atoms, other_window) {
+                                debug!(window = other_window, error = %e, "Failed to minimize window via hotkey");
+                            }
+                        }
                     }
                 } else {
                     warn!(active_windows = cycle_state.config_order().len(), "No window to activate, cycle state is empty");
