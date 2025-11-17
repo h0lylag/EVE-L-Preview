@@ -220,7 +220,7 @@ impl<'a> Thumbnail<'a> {
             overlay_gc,
             overlay_pixmap,
             &CreateGCAux::new()
-                .foreground(ctx.config.text_foreground),
+                .foreground(ctx.config.text_color),
         )
         .context(format!("Failed to create graphics context for '{}'", character_name))?;
 
@@ -505,7 +505,7 @@ impl<'a> Thumbnail<'a> {
         // Render text with fontdue
         let rendered = self.font_renderer.render_text(
             &self.character_name,
-            self.config.text_foreground,
+            self.config.text_color,
         )
         .context(format!("Failed to render text '{}' with font renderer", self.character_name))?;
         

@@ -90,8 +90,8 @@ pub struct Profile {
     pub text_size: u16,
     pub text_x: i16,
     pub text_y: i16,
-    #[serde(rename = "text_foreground")]
-    pub text_foreground: String,
+    #[serde(rename = "text_color")]
+    pub text_color: String,
     
     // Hotkey settings (cycle_group is per-profile)
     #[serde(default)]
@@ -149,8 +149,8 @@ fn default_profiles() -> Vec<Profile> {
         border_color: "#7FFF0000".to_string(),
         text_size: 22,
         text_x: 10,
-        text_y: 20,
-        text_foreground: "#FFFFFFFF".to_string(),
+        text_y: 10,
+        text_color: "#FFFFFFFF".to_string(),
         cycle_group: Vec::new(),
         character_positions: HashMap::new(),
     }]

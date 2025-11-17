@@ -80,15 +80,15 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile) -> bool {
         });
         
         ui.horizontal(|ui| {
-            ui.label("Text Foreground:");
-            if ui.text_edit_singleline(&mut profile.text_foreground).changed() {
+            ui.label("Text Color:");
+            if ui.text_edit_singleline(&mut profile.text_color).changed() {
                 changed = true;
             }
             
             // Color picker button
-            if let Ok(mut color) = parse_hex_color(&profile.text_foreground) {
+            if let Ok(mut color) = parse_hex_color(&profile.text_color) {
                 if ui.color_edit_button_srgba(&mut color).changed() {
-                    profile.text_foreground = format_hex_color(color);
+                    profile.text_color = format_hex_color(color);
                     changed = true;
                 }
             }

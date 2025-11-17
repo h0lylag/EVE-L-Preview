@@ -54,7 +54,7 @@ pub fn ui(ui: &mut egui::Ui, global: &mut GlobalSettings) -> bool {
         
         // Snap threshold
         ui.horizontal(|ui| {
-            ui.label("Snap Threshold:");
+            ui.label("Thumbnail Snap Distance:");
             if ui.add(egui::Slider::new(&mut global.snap_threshold, 0..=50)
                 .suffix(" px")).changed() {
                 changed = true;

@@ -32,7 +32,7 @@ pub struct DisplayConfig {
     pub border_size: u16,
     pub border_color: Color,
     pub text_offset: TextOffset,
-    pub text_foreground: u32,
+    pub text_color: u32,
     pub hide_when_no_focus: bool,
 }
 
@@ -79,10 +79,10 @@ impl PersistentState {
                 HexColor::from_argb32(0xFFFF0000).to_x11_color()
             });
         
-        let text_foreground = HexColor::parse(&self.profile.text_foreground)
+        let text_color = HexColor::parse(&self.profile.text_color)
             .map(|c| c.argb32())  // Use raw ARGB, not premultiplied
             .unwrap_or_else(|| {
-                error!(text_color = %self.profile.text_foreground, "Invalid text_color hex, using default");
+                error!(text_color = %self.profile.text_color, "Invalid text_color hex, using default");
                 HexColor::from_argb32(0xFF_FF_FF_FF).argb32()
             });
         
@@ -93,7 +93,7 @@ impl PersistentState {
             border_size: self.profile.border_size,
             border_color,
             text_offset: TextOffset::from_border_edge(self.profile.text_x, self.profile.text_y),
-            text_foreground,
+            text_color,
             hide_when_no_focus: self.global.hide_when_no_focus,
         }
     }

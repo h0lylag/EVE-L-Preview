@@ -91,8 +91,18 @@ enum ActiveTab {
 }
 
 impl ManagerApp {
-    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    fn new(cc: &eframe::CreationContext<'_>) -> Self {
         info!("Initializing egui manager");
+
+        // Configure egui style for larger text
+        let mut style = (*cc.egui_ctx.style()).clone();
+        
+        // Increase all text sizes by 2 points
+        style.text_styles.iter_mut().for_each(|(_, font_id)| {
+            font_id.size += 2.0;
+        });
+        
+        cc.egui_ctx.set_style(style);
 
         // Create channel for tray icon commands
         #[cfg(target_os = "linux")]
