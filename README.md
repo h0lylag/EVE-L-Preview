@@ -14,6 +14,14 @@ Creates small preview windows for each EVE client you have running. Each preview
 
 Works on Wayland as long as you're running EVE through Wine/Proton in XWayland mode.
 
+## Screenshots
+
+![Live preview thumbnails of EVE clients](https://i.imgur.com/N99G1qz.png)
+
+![GUI Manager - Global Settings](https://i.imgur.com/iQP2ekg.png)
+
+![GUI Manager - Profile Settings](https://i.imgur.com/EuY8p6h.png)
+
 ## Features
 
 - Truly live, real-time thumbnails of each EVE client window. No screenshotting workarounds.
