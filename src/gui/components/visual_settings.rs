@@ -39,7 +39,9 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile) -> bool {
                 
                 ui.horizontal(|ui| {
                     ui.label("Border Color:");
-                    if ui.text_edit_singleline(&mut profile.border_color).changed() {
+                    let text_edit = egui::TextEdit::singleline(&mut profile.border_color)
+                        .desired_width(100.0);
+                    if ui.add(text_edit).changed() {
                         changed = true;
                     }
                     
@@ -81,7 +83,9 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile) -> bool {
         
         ui.horizontal(|ui| {
             ui.label("Text Color:");
-            if ui.text_edit_singleline(&mut profile.text_color).changed() {
+            let text_edit = egui::TextEdit::singleline(&mut profile.text_color)
+                .desired_width(100.0);
+            if ui.add(text_edit).changed() {
                 changed = true;
             }
             

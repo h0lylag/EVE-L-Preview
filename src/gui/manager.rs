@@ -392,18 +392,20 @@ impl ManagerApp {
         ui.separator();
         ui.add_space(SECTION_SPACING);
 
-        // Visual Settings for selected profile
+        // Visual Settings and Hotkey Settings side-by-side
         let current_profile = &mut self.config.profiles[self.selected_profile_idx];
-        if components::visual_settings::ui(ui, current_profile) {
-            self.settings_changed = true;
-        }
-
-        ui.add_space(SECTION_SPACING);
-
-        // Hotkey Settings for selected profile
-        if components::hotkey_settings::ui(ui, current_profile, &mut self.hotkey_settings_state) {
-            self.settings_changed = true;
-        }
+        
+        ui.columns(2, |columns| {
+            // Left column: Visual Settings
+            if components::visual_settings::ui(&mut columns[0], current_profile) {
+                self.settings_changed = true;
+            }
+            
+            // Right column: Hotkey Settings
+            if components::hotkey_settings::ui(&mut columns[1], current_profile, &mut self.hotkey_settings_state) {
+                self.settings_changed = true;
+            }
+        });
     }
 }
 
