@@ -15,6 +15,8 @@ pub struct HotkeySettingsState {
     cycle_group_text: String,
     new_character_text: String,
     editor_mode: EditorMode,
+    show_add_characters_popup: bool,
+    character_selections: std::collections::HashMap<String, bool>,
 }
 
 impl HotkeySettingsState {
@@ -23,6 +25,8 @@ impl HotkeySettingsState {
             cycle_group_text: String::new(),
             new_character_text: String::new(),
             editor_mode: EditorMode::DragDrop,
+            show_add_characters_popup: false,
+            character_selections: std::collections::HashMap::new(),
         }
     }
     
@@ -75,6 +79,16 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut HotkeySettingsSt
                         state.save_to_profile(profile);
                     }
                 });
+            
+            // Add button to import active characters
+            if ui.button("➕ Add").clicked() {
+                state.show_add_characters_popup = true;
+                // Initialize selections for all available characters (unchecked by default)
+                state.character_selections.clear();
+                for char_name in profile.character_positions.keys() {
+                    state.character_selections.insert(char_name.clone(), false);
+                }
+            }
         });
         
         ui.add_space(ITEM_SPACING);
@@ -213,6 +227,89 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut HotkeySettingsSt
             .small()
             .weak());
     });
+    
+    // Add Characters popup modal
+    if state.show_add_characters_popup {
+        egui::Window::new("Add Characters")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ui.ctx(), |ui| {
+                ui.label("Select characters to add to cycle order:");
+                ui.add_space(ITEM_SPACING / 2.0);
+                
+                // Select All / None toggle
+                ui.horizontal(|ui| {
+                    let all_selected = state.character_selections.values().all(|&v| v);
+                    let any_selected = state.character_selections.values().any(|&v| v);
+                    
+                    if ui.button(if all_selected { "Deselect All" } else { "Select All" }).clicked() {
+                        let new_state = !all_selected;
+                        for selected in state.character_selections.values_mut() {
+                            *selected = new_state;
+                        }
+                    }
+                    
+                    if any_selected {
+                        ui.label(format!("({} selected)", state.character_selections.values().filter(|&&v| v).count()));
+                    }
+                });
+                
+                ui.add_space(ITEM_SPACING / 2.0);
+                ui.separator();
+                ui.add_space(ITEM_SPACING / 2.0);
+                
+                // Scrollable list of checkboxes
+                egui::ScrollArea::vertical()
+                    .max_height(300.0)
+                    .show(ui, |ui| {
+                        // Sort character names for consistent display
+                        let mut char_names: Vec<_> = state.character_selections.keys().cloned().collect();
+                        char_names.sort();
+                        
+                        for char_name in char_names {
+                            if let Some(selected) = state.character_selections.get_mut(&char_name) {
+                                // Show if already in cycle group
+                                let already_in_cycle = profile.cycle_group.contains(&char_name);
+                                let label = if already_in_cycle {
+                                    format!("{} (already in cycle)", char_name)
+                                } else {
+                                    char_name.clone()
+                                };
+                                
+                                ui.checkbox(selected, label);
+                            }
+                        }
+                    });
+                
+                ui.add_space(ITEM_SPACING);
+                ui.separator();
+                
+                // OK and Cancel buttons
+                ui.horizontal(|ui| {
+                    if ui.button("OK").clicked() {
+                        // Add selected characters that aren't already in cycle group
+                        for (char_name, selected) in &state.character_selections {
+                            if *selected && !profile.cycle_group.contains(char_name) {
+                                profile.cycle_group.push(char_name.clone());
+                                changed = true;
+                            }
+                        }
+                        
+                        // Update text buffer if in text mode
+                        if state.editor_mode == EditorMode::TextEdit {
+                            state.load_from_profile(profile);
+                        }
+                        
+                        state.show_add_characters_popup = false;
+                    }
+                    
+                    if ui.button("Cancel").clicked() {
+                        state.show_add_characters_popup = false;
+                    }
+                });
+            });
+    }
     
     changed
 }
