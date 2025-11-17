@@ -64,6 +64,12 @@ pub struct GlobalSettings {
     /// This keeps thumbnails in place when swapping characters on the same EVE client
     #[serde(default = "default_preserve_thumbnail_position_on_swap")]
     pub preserve_thumbnail_position_on_swap: bool,
+    /// Default thumbnail width for new characters
+    #[serde(default = "default_thumbnail_width")]
+    pub default_thumbnail_width: u16,
+    /// Default thumbnail height for new characters
+    #[serde(default = "default_thumbnail_height")]
+    pub default_thumbnail_height: u16,
 }
 
 /// Profile - A complete set of visual and behavioral settings
@@ -121,6 +127,14 @@ fn default_preserve_thumbnail_position_on_swap() -> bool {
     true
 }
 
+fn default_thumbnail_width() -> u16 {
+    250
+}
+
+fn default_thumbnail_height() -> u16 {
+    140
+}
+
 fn default_border_enabled() -> bool {
     true
 }
@@ -163,6 +177,8 @@ impl Default for GlobalSettings {
             hide_when_no_focus: false,
             snap_threshold: default_snap_threshold(),
             preserve_thumbnail_position_on_swap: default_preserve_thumbnail_position_on_swap(),
+            default_thumbnail_width: default_thumbnail_width(),
+            default_thumbnail_height: default_thumbnail_height(),
         }
     }
 }
