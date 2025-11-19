@@ -129,7 +129,18 @@ fn default_border_enabled() -> bool {
 }
 
 fn default_text_font_family() -> String {
-    "Monospace".to_string()
+    // Try to detect best default TrueType font, but don't fail config creation
+    match crate::preview::select_best_default_font() {
+        Ok((name, _path)) => {
+            tracing::info!(font = %name, "Using detected default font for new config");
+            name
+        }
+        Err(_e) => {
+            // Empty string = daemon will use from_system_font() which has X11 fallback
+            tracing::warn!("Could not detect TrueType font, config will use X11 fallback");
+            String::new()
+        }
+    }
 }
 
 fn default_profiles() -> Vec<Profile> {

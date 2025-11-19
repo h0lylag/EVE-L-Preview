@@ -8,7 +8,7 @@ mod session_state;
 mod snapping;
 mod thumbnail;
 
-pub use font_discovery::{find_font_path, list_fonts};
+pub use font_discovery::{find_font_path, list_fonts, select_best_default_font};
 
 use anyhow::{Context, Result};
 use std::collections::HashMap;
@@ -273,14 +273,14 @@ pub fn run_preview_daemon() -> Result<()> {
                 error = ?e,
                 "Failed to load configured font, falling back to system default"
             );
-            font::FontRenderer::from_system_font(persistent_state.profile.text_size as f32)
+            font::FontRenderer::from_system_font(&conn, persistent_state.profile.text_size as f32)
         })
     } else {
         info!(
             size = persistent_state.profile.text_size,
             "No font configured, using system default"
         );
-        font::FontRenderer::from_system_font(persistent_state.profile.text_size as f32)
+        font::FontRenderer::from_system_font(&conn, persistent_state.profile.text_size as f32)
     }
     .context(format!("Failed to initialize font renderer with size {}", persistent_state.profile.text_size))?;
     

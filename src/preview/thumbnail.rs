@@ -502,83 +502,115 @@ impl<'a> Thumbnail<'a> {
         )
         .context(format!("Failed to clear overlay area for '{}'", self.character_name))?;
         
-        // Render text with fontdue
-        let rendered = self.font_renderer.render_text(
-            &self.character_name,
-            self.config.text_color,
-        )
-        .context(format!("Failed to render text '{}' with font renderer", self.character_name))?;
-        
-        if rendered.width > 0 && rendered.height > 0 {
-            // Upload rendered text bitmap to X11
-            let text_pixmap = self.conn.generate_id()
-                .context("Failed to generate ID for text pixmap")?;
-            self.conn.create_pixmap(
-                x11::ARGB_DEPTH,
-                text_pixmap,
-                self.overlay_pixmap,
-                rendered.width as u16,
-                rendered.height as u16,
-            )
-            .context(format!("Failed to create text pixmap for '{}'", self.character_name))?;
-            
-            // Convert Vec<u32> ARGB to bytes in X11 native format (little-endian BGRA)
-            let mut image_data = Vec::with_capacity(rendered.data.len() * 4);
-            for pixel in &rendered.data {
-                image_data.push(*pixel as u8);        // B
-                image_data.push((pixel >> 8) as u8);  // G
-                image_data.push((pixel >> 16) as u8); // R
-                image_data.push((pixel >> 24) as u8); // A
+        // Render text based on font renderer type
+        if self.font_renderer.requires_direct_rendering() {
+            // X11 fallback: direct rendering using ImageText8
+            if let Some(font_id) = self.font_renderer.x11_font_id() {
+                // Create GC with font
+                let gc = self.conn.generate_id()
+                    .context("Failed to generate GC ID for X11 text")?;
+                
+                // Convert ARGB color to X11 pixel value (strip alpha)
+                let fg_pixel = self.config.text_color & 0x00FFFFFF;
+                
+                self.conn.create_gc(gc, self.overlay_pixmap, &CreateGCAux::new()
+                    .font(font_id)
+                    .foreground(fg_pixel)
+                )
+                .context(format!("Failed to create GC for X11 text rendering for '{}'", self.character_name))?;
+                
+                // ImageText8 renders directly to drawable
+                self.conn.image_text8(
+                    self.overlay_pixmap,
+                    gc,
+                    self.config.text_offset.x,
+                    self.config.text_offset.y + self.font_renderer.size() as i16, // Baseline adjustment
+                    self.character_name.as_bytes()
+                )
+                .context(format!("Failed to render X11 text for '{}'", self.character_name))?;
+                
+                self.conn.free_gc(gc)
+                    .context("Failed to free text GC")?;
             }
-            
-            self.conn.put_image(
-                ImageFormat::Z_PIXMAP,
-                text_pixmap,
-                self.overlay_gc,
-                rendered.width as u16,
-                rendered.height as u16,
-                0,
-                0,
-                0,
-                x11::ARGB_DEPTH,
-                &image_data,
+        } else {
+            // Fontdue: pre-rendered bitmap
+            let rendered = self.font_renderer.render_text(
+                &self.character_name,
+                self.config.text_color,
             )
-            .context(format!("Failed to upload text image for '{}'", self.character_name))?;
+            .context(format!("Failed to render text '{}' with font renderer", self.character_name))?;
             
-            // Create picture for the text pixmap
-            let text_picture = self.conn.generate_id()
-                .context("Failed to generate ID for text picture")?;
-            self.conn.render_create_picture(
-                text_picture,
-                text_pixmap,
-                get_pictformat(self.conn, x11::ARGB_DEPTH, true)
-                    .context("Failed to get ARGB picture format for text")?,
-                &CreatePictureAux::new(),
-            )
-            .context(format!("Failed to create text picture for '{}'", self.character_name))?;
-            
-            // Composite text onto overlay
-            self.conn.render_composite(
-                PictOp::OVER,
-                text_picture,
-                0u32,
-                self.overlay_picture,
-                0,
-                0,
-                0,
-                0,
-                self.config.text_offset.x,
-                self.config.text_offset.y,
-                rendered.width as u16,
-                rendered.height as u16,
-            )
-            .context(format!("Failed to composite text onto overlay for '{}'", self.character_name))?;
-            
-            // Cleanup
-            self.conn.render_free_picture(text_picture)
-                .context("Failed to free text picture")?;
-            self.conn.free_pixmap(text_pixmap)
-                .context("Failed to free text pixmap")?;
+            if rendered.width > 0 && rendered.height > 0 {
+                // Upload rendered text bitmap to X11
+                let text_pixmap = self.conn.generate_id()
+                    .context("Failed to generate ID for text pixmap")?;
+                self.conn.create_pixmap(
+                    x11::ARGB_DEPTH,
+                    text_pixmap,
+                    self.overlay_pixmap,
+                    rendered.width as u16,
+                    rendered.height as u16,
+                )
+                .context(format!("Failed to create text pixmap for '{}'", self.character_name))?;
+                
+                // Convert Vec<u32> ARGB to bytes in X11 native format (little-endian BGRA)
+                let mut image_data = Vec::with_capacity(rendered.data.len() * 4);
+                for pixel in &rendered.data {
+                    image_data.push(*pixel as u8);        // B
+                    image_data.push((pixel >> 8) as u8);  // G
+                    image_data.push((pixel >> 16) as u8); // R
+                    image_data.push((pixel >> 24) as u8); // A
+                }
+                
+                self.conn.put_image(
+                    ImageFormat::Z_PIXMAP,
+                    text_pixmap,
+                    self.overlay_gc,
+                    rendered.width as u16,
+                    rendered.height as u16,
+                    0,
+                    0,
+                    0,
+                    x11::ARGB_DEPTH,
+                    &image_data,
+                )
+                .context(format!("Failed to upload text image for '{}'", self.character_name))?;
+                
+                // Create picture for the text pixmap
+                let text_picture = self.conn.generate_id()
+                    .context("Failed to generate ID for text picture")?;
+                self.conn.render_create_picture(
+                    text_picture,
+                    text_pixmap,
+                    get_pictformat(self.conn, x11::ARGB_DEPTH, true)
+                        .context("Failed to get ARGB picture format for text")?,
+                    &CreatePictureAux::new(),
+                )
+                .context(format!("Failed to create text picture for '{}'", self.character_name))?;
+                
+                // Composite text onto overlay
+                self.conn.render_composite(
+                    PictOp::OVER,
+                    text_picture,
+                    0u32,
+                    self.overlay_picture,
+                    0,
+                    0,
+                    0,
+                    0,
+                    self.config.text_offset.x,
+                    self.config.text_offset.y,
+                    rendered.width as u16,
+                    rendered.height as u16,
+                )
+                .context(format!("Failed to composite text onto overlay for '{}'", self.character_name))?;
+                
+                // Cleanup
+                self.conn.render_free_picture(text_picture)
+                    .context("Failed to free text picture")?;
+                self.conn.free_pixmap(text_pixmap)
+                    .context("Failed to free text pixmap")?;
+            }
         }
         
         Ok(())

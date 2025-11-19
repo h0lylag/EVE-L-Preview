@@ -12,28 +12,44 @@ use tracing::{debug, info, warn};
 /// Common font style names for parsing family+style strings
 /// Order matters: longer/more specific styles must come first to avoid substring matches
 /// (e.g., "SemiBold Italic" must be checked before "Bold Italic")
+/// Derived from surveying common programmer fonts (Liberation, DejaVu, Noto, Source Code Pro, etc.)
 const KNOWN_STYLES: &[&str] = &[
+    // Condensed variants (longest first)
+    "Condensed Bold Oblique",
     "Condensed Bold Italic",
     "Condensed Bold",
+    "Condensed Oblique",
+    "Condensed Italic",
+    "Condensed",
+    
+    // Weight + style combinations
+    "ExtraBold Italic",
+    "ExtraLight Italic",
     "SemiBold Italic",
-    "Bold Italic",
-    "Bold Oblique",
     "Black Italic",
     "Medium Italic",
     "Light Italic",
     "Thin Italic",
+    "Bold Oblique",
+    "Bold Italic",
+    
+    // Weights (heavy to light)
     "ExtraBold",
-    "ExtraLight",
-    "SemiBold",
-    "Italic",
-    "Oblique",
-    "Bold",
-    "Light",
-    "Medium",
     "Black",
-    "Thin",
+    "Bold",
+    "SemiBold",
+    "Medium",
+    "Book",      // DejaVu Sans Mono uses "Book" for regular weight
     "Regular",
-    "Condensed",
+    "Light",
+    "ExtraLight",
+    "Thin",
+    
+    // Styles
+    "Oblique",
+    "Italic",
+    
+    // Width variants
     "Expanded",
 ];
 
@@ -165,6 +181,69 @@ pub fn find_font_path(font_name: &str) -> Result<PathBuf> {
     );
     
     Ok(path)
+}
+
+/// Select the best available default TrueType font by probing multiple sources
+/// Returns (font_name, path) tuple for the first working font found, or Err if none available
+pub fn select_best_default_font() -> Result<(String, PathBuf)> {
+    // Try specific known-good fonts first
+    let candidates = [
+        "DejaVu Sans Mono Book",
+        "Liberation Mono", 
+        "Noto Sans Mono",
+    ];
+    
+    for candidate in &candidates {
+        if let Ok(path) = find_font_path(candidate) {
+            if path.exists() {
+                info!(font = candidate, path = %path.display(), "Selected default font via fontconfig");
+                return Ok((candidate.to_string(), path));
+            }
+        }
+    }
+    
+    // Last resort: query for ANY monospace Regular/Normal weight font
+    debug!("Specific fonts not found, querying for any monospace font");
+    let fc = Fontconfig::new().context("Failed to initialize fontconfig")?;
+    let mut pattern = Pattern::new(&fc);
+    
+    // FC_SPACING = 100 means monospace
+    pattern.add_integer(fontconfig::FC_SPACING, 100);
+    
+    let font_set = fontconfig::list_fonts(&pattern, None);
+    
+    // Find first non-bold, non-italic font
+    for font_pattern in font_set.iter() {
+        let family = font_pattern.get_string(fontconfig::FC_FAMILY)
+            .unwrap_or("Unknown");
+        
+        // Check if this is a "normal" style (not bold/italic)
+        if let Some(style) = font_pattern.get_string(fontconfig::FC_STYLE) {
+            let style_lower = style.to_lowercase();
+            if style_lower.contains("bold") || style_lower.contains("italic") 
+                || style_lower.contains("oblique") {
+                continue; // Skip styled variants
+            }
+        }
+        
+        // Try to get the path for this font
+        if let Some(file_path) = font_pattern.filename() {
+            let path = PathBuf::from(file_path);
+            if path.exists() {
+                info!(font = family, path = %path.display(), "Selected first available monospace font");
+                return Ok((family.to_string(), path));
+            }
+        }
+    }
+    
+    Err(anyhow::anyhow!(
+        "No TrueType fonts found. Tried:\n\
+         - Specific fonts: {:?}\n\
+         - Any monospace Regular/Normal font via fontconfig\n\
+         \n\
+         Will fall back to X11 core fonts.",
+        candidates
+    ))
 }
 
 #[cfg(test)]
