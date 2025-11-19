@@ -106,3 +106,110 @@ pub mod config {
     /// Configuration filename
     pub const FILENAME: &str = "eve-l-preview.json";
 }
+
+/// GUI-specific constants (egui manager window)
+pub mod gui {
+    use egui;
+    
+    /// Manager window dimensions
+    pub const WINDOW_WIDTH: f32 = 600.0;
+    pub const WINDOW_HEIGHT: f32 = 800.0;
+    pub const WINDOW_MIN_WIDTH: f32 = 500.0;
+    pub const WINDOW_MIN_HEIGHT: f32 = 600.0;
+    
+    /// Layout spacing
+    pub const SECTION_SPACING: f32 = 15.0;
+    pub const ITEM_SPACING: f32 = 8.0;
+    
+    /// Status colors
+    pub const STATUS_RUNNING: egui::Color32 = egui::Color32::from_rgb(0, 200, 0);
+    pub const STATUS_STOPPED: egui::Color32 = egui::Color32::from_rgb(200, 0, 0);
+    pub const STATUS_STARTING: egui::Color32 = egui::Color32::from_rgb(200, 200, 0);
+    
+    /// Daemon monitoring
+    pub const DAEMON_CHECK_INTERVAL_MS: u64 = 500;
+}
+
+/// Default configuration values
+/// These are used when creating new profiles or missing config fields
+pub mod defaults {
+    /// GUI manager window settings
+    pub mod manager {
+        /// Default GUI window width in pixels (matches gui::WINDOW_WIDTH)
+        pub const WINDOW_WIDTH: u16 = 600;
+        
+        /// Default GUI window height in pixels (matches gui::WINDOW_HEIGHT)
+        pub const WINDOW_HEIGHT: u16 = 800;
+    }
+    
+    /// Thumbnail window settings
+    pub mod thumbnail {
+        /// Default thumbnail width in pixels
+        pub const WIDTH: u16 = 250;
+        
+        /// Default thumbnail height in pixels
+        pub const HEIGHT: u16 = 140;
+        
+        /// Default opacity percentage (0-100)
+        pub const OPACITY_PERCENT: u8 = 75;
+    }
+    
+    /// Border appearance settings
+    pub mod border {
+        /// Whether border is enabled by default
+        pub const ENABLED: bool = true;
+        
+        /// Default border thickness in pixels
+        pub const SIZE: u16 = 3;
+        
+        /// Default border color (ARGB hex string: 50% opacity red)
+        pub const COLOR: &str = "#40FF00";
+    }
+    
+    /// Text overlay settings
+    pub mod text {
+        /// Default text size in pixels
+        pub const SIZE: u16 = 22;
+        
+        /// Default text X offset from left edge in pixels
+        pub const OFFSET_X: i16 = 10;
+        
+        /// Default text Y offset from top edge in pixels
+        pub const OFFSET_Y: i16 = 10;
+        
+        /// Default text color (ARGB hex string: opaque white)
+        pub const COLOR: &str = "#40FF00";
+        
+        /// Preferred TrueType fonts (tried in order)
+        /// First available font will be selected
+        pub const FONT_CANDIDATES: &[&str] = &[
+            "DejaVu Sans Mono Book",
+            "Liberation Mono",
+            "Noto Sans Mono",
+        ];
+    }
+    
+    /// Daemon behavior settings
+    pub mod behavior {
+        /// Default profile name
+        pub const PROFILE_NAME: &str = "default";
+        
+        /// Default profile description
+        pub const PROFILE_DESCRIPTION: &str = "Default profile";
+        
+        /// Edge/corner snapping threshold in pixels
+        pub const SNAP_THRESHOLD: u16 = 15;
+        
+        /// Preserve thumbnail position when character switches
+        pub const PRESERVE_POSITION_ON_SWAP: bool = true;
+        
+        /// Minimize other clients when switching via hotkey
+        pub const MINIMIZE_CLIENTS_ON_SWITCH: bool = false;
+        
+        /// Require EVE window focus for hotkey activation
+        pub const HOTKEY_REQUIRE_EVE_FOCUS: bool = false;
+        
+        /// Hide thumbnails when EVE window loses focus
+        pub const HIDE_WHEN_NO_FOCUS: bool = false;
+    }
+}

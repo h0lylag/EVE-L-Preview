@@ -187,13 +187,9 @@ pub fn find_font_path(font_name: &str) -> Result<PathBuf> {
 /// Returns (font_name, path) tuple for the first working font found, or Err if none available
 pub fn select_best_default_font() -> Result<(String, PathBuf)> {
     // Try specific known-good fonts first
-    let candidates = [
-        "DejaVu Sans Mono Book",
-        "Liberation Mono", 
-        "Noto Sans Mono",
-    ];
+    let candidates = crate::constants::defaults::text::FONT_CANDIDATES;
     
-    for candidate in &candidates {
+    for candidate in candidates {
         if let Ok(path) = find_font_path(candidate) {
             if path.exists() {
                 info!(font = candidate, path = %path.display(), "Selected default font via fontconfig");

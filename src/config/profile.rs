@@ -97,35 +97,35 @@ pub struct Profile {
 
 // Default value functions
 fn default_profile_name() -> String {
-    "default".to_string()
+    crate::constants::defaults::behavior::PROFILE_NAME.to_string()
 }
 
 fn default_window_width() -> u16 {
-    600
+    crate::constants::defaults::manager::WINDOW_WIDTH
 }
 
 fn default_window_height() -> u16 {
-    800
+    crate::constants::defaults::manager::WINDOW_HEIGHT
 }
 
 fn default_snap_threshold() -> u16 {
-    15
+    crate::constants::defaults::behavior::SNAP_THRESHOLD
 }
 
 fn default_preserve_thumbnail_position_on_swap() -> bool {
-    true
+    crate::constants::defaults::behavior::PRESERVE_POSITION_ON_SWAP
 }
 
 fn default_thumbnail_width() -> u16 {
-    250
+    crate::constants::defaults::thumbnail::WIDTH
 }
 
 fn default_thumbnail_height() -> u16 {
-    140
+    crate::constants::defaults::thumbnail::HEIGHT
 }
 
 fn default_border_enabled() -> bool {
-    true
+    crate::constants::defaults::border::ENABLED
 }
 
 fn default_text_font_family() -> String {
@@ -145,16 +145,16 @@ fn default_text_font_family() -> String {
 
 fn default_profiles() -> Vec<Profile> {
     vec![Profile {
-        name: "default".to_string(),
-        description: "Default profile".to_string(),
-        opacity_percent: 75,
-        border_enabled: true,
-        border_size: 3,
-        border_color: "#7FFF0000".to_string(),
-        text_size: 22,
-        text_x: 10,
-        text_y: 10,
-        text_color: "#FFFFFFFF".to_string(),
+        name: crate::constants::defaults::behavior::PROFILE_NAME.to_string(),
+        description: crate::constants::defaults::behavior::PROFILE_DESCRIPTION.to_string(),
+        opacity_percent: crate::constants::defaults::thumbnail::OPACITY_PERCENT,
+        border_enabled: crate::constants::defaults::border::ENABLED,
+        border_size: crate::constants::defaults::border::SIZE,
+        border_color: crate::constants::defaults::border::COLOR.to_string(),
+        text_size: crate::constants::defaults::text::SIZE,
+        text_x: crate::constants::defaults::text::OFFSET_X,
+        text_y: crate::constants::defaults::text::OFFSET_Y,
+        text_color: crate::constants::defaults::text::COLOR.to_string(),
         text_font_family: default_text_font_family(),
         cycle_group: Vec::new(),
         character_positions: HashMap::new(),
@@ -169,9 +169,9 @@ impl Default for GlobalSettings {
             window_height: default_window_height(),
             window_x: None,
             window_y: None,
-            minimize_clients_on_switch: false,
-            hotkey_require_eve_focus: false,
-            hide_when_no_focus: false,
+            minimize_clients_on_switch: crate::constants::defaults::behavior::MINIMIZE_CLIENTS_ON_SWITCH,
+            hotkey_require_eve_focus: crate::constants::defaults::behavior::HOTKEY_REQUIRE_EVE_FOCUS,
+            hide_when_no_focus: crate::constants::defaults::behavior::HIDE_WHEN_NO_FOCUS,
             snap_threshold: default_snap_threshold(),
             preserve_thumbnail_position_on_swap: default_preserve_thumbnail_position_on_swap(),
             default_thumbnail_width: default_thumbnail_width(),

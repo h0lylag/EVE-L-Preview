@@ -2,7 +2,7 @@
 
 use eframe::egui;
 use crate::config::profile::GlobalSettings;
-use crate::gui::constants::*;
+use crate::constants::gui::*;
 
 /// Renders global settings UI and returns true if changes were made
 pub fn ui(ui: &mut egui::Ui, global: &mut GlobalSettings) -> bool {

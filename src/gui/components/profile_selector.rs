@@ -1,6 +1,6 @@
 use eframe::egui;
 use crate::config::profile::{Config, Profile};
-use crate::gui::constants::*;
+use crate::constants::gui::*;
 
 pub struct ProfileSelector {
     edit_profile_name: String,

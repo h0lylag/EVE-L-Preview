@@ -12,7 +12,8 @@ use tracing::{error, info, warn};
 #[cfg(target_os = "linux")]
 use ksni::TrayMethods;
 
-use super::{components, constants::*};
+use super::components;
+use crate::constants::gui::*;
 use crate::config::profile::{Config, SaveStrategy};
 use crate::gui::components::profile_selector::{ProfileSelector, ProfileAction};
 

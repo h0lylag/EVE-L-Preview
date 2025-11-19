@@ -2,7 +2,7 @@
 
 use eframe::egui;
 use crate::config::profile::Profile;
-use crate::gui::constants::*;
+use crate::constants::gui::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EditorMode {
