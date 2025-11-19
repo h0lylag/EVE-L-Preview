@@ -40,7 +40,7 @@ struct SnapCandidate {
 /// Returns position if snapping should occur, None otherwise
 pub fn find_snap_position(
     dragged: Rect,
-    others: &[(Window, Rect)],
+    others: &[Rect],
     threshold: u16,
 ) -> Option<Position> {
     if threshold == 0 {
@@ -51,7 +51,7 @@ pub fn find_snap_position(
     let mut best_y: Option<SnapCandidate> = None;
     let threshold = threshold as i16;
     
-    for (_, other) in others {
+    for other in others {
         // Horizontal snapping (X-axis)
         // Edge-to-edge snapping (always allowed)
         check_snap(&mut best_x, dragged.left(), other.right(), threshold);

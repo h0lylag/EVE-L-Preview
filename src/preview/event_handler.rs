@@ -58,6 +58,7 @@ fn handle_create_notify<'a>(
             .reply()
             .context("Failed to get geometry reply for new thumbnail")?;
         
+        // Save initial position to disk when new character window appears
         persistent_state.update_position(
             &thumbnail.character_name,
             geom.x,
@@ -148,9 +149,39 @@ fn handle_button_press(
     cycle_state: &mut CycleState,
 ) -> Result<()> {
     debug!(x = event.root_x, y = event.root_y, detail = event.detail, "ButtonPress received");
-    if let Some((_, thumbnail)) = eves
-        .iter_mut()
+    
+    // First, find which window was clicked (if any)
+    let clicked_window = eves
+        .iter()
         .find(|(_, thumb)| thumb.is_hovered(event.root_x, event.root_y) && thumb.state.is_visible())
+        .map(|(win, _)| *win);
+    
+    let Some(clicked_window) = clicked_window else {
+        return Ok(());  // No thumbnail was clicked
+    };
+    
+    // For right-click drags, collect snap targets BEFORE getting mutable reference
+    let snap_targets = if event.detail == mouse::BUTTON_RIGHT {
+        eves
+            .iter()
+            .filter(|(win, t)| **win != clicked_window && t.state.is_visible())
+            .filter_map(|(_, t)| {
+                ctx.conn.get_geometry(t.window).ok()
+                    .and_then(|req| req.reply().ok())
+                    .map(|geom| Rect {
+                        x: geom.x,
+                        y: geom.y,
+                        width: t.dimensions.width,
+                        height: t.dimensions.height,
+                    })
+            })
+            .collect()
+    } else {
+        Vec::new()  // No snap targets needed for left-click
+    };
+    
+    // Now get mutable reference to the clicked thumbnail
+    if let Some(thumbnail) = eves.get_mut(&clicked_window)
     {
         debug!(window = thumbnail.window, character = %thumbnail.character_name, "ButtonPress on thumbnail");
         let geom = ctx.conn.get_geometry(thumbnail.window)
@@ -159,10 +190,13 @@ fn handle_button_press(
             .context(format!("Failed to get geometry on button press for '{}'", thumbnail.character_name))?;
         thumbnail.input_state.drag_start = Position::new(event.root_x, event.root_y);
         thumbnail.input_state.win_start = Position::new(geom.x, geom.y);
+        
         // Only allow dragging with right-click
         if event.detail == mouse::BUTTON_RIGHT {
+            // Store the pre-computed snap targets
+            thumbnail.input_state.snap_targets = snap_targets;
             thumbnail.input_state.dragging = true;
-            debug!(window = thumbnail.window, "Started dragging thumbnail");
+            debug!(window = thumbnail.window, snap_target_count = thumbnail.input_state.snap_targets.len(), "Started dragging thumbnail with cached snap targets");
         }
         // Left-click sets current character for cycling
         if event.detail == mouse::BUTTON_LEFT {
@@ -215,6 +249,7 @@ fn handle_button_release(
         }
         
         // Save position after drag ends (right-click release)
+        // This saves to disk ONCE per drag operation, not during motion events
         if thumbnail.input_state.dragging {
             // Query actual position from X11
             let geom = ctx.conn.get_geometry(thumbnail.window)
@@ -222,10 +257,10 @@ fn handle_button_release(
                 .reply()
                 .context(format!("Failed to get geometry after drag for '{}'", thumbnail.character_name))?;
             
-            // Update session state
+            // Update session state (in-memory only)
             session_state.update_window_position(thumbnail.window, geom.x, geom.y);
             debug!(window = thumbnail.window, x = geom.x, y = geom.y, "Saved session position after drag");
-            // Persist character position AND dimensions
+            // Persist character position AND dimensions to disk (single write per drag)
             persistent_state.update_position(
                 &thumbnail.character_name,
                 geom.x,
@@ -236,7 +271,9 @@ fn handle_button_release(
             .context(format!("Failed to save position for '{}' after drag", thumbnail.character_name))?;
         }
         
+        // Clear dragging state and free cached snap targets
         thumbnail.input_state.dragging = false;
+        thumbnail.input_state.snap_targets.clear();
     }
     
     // After releasing mutable borrow, optionally minimize other EVE clients
@@ -259,9 +296,8 @@ fn handle_button_release(
 }
 
 /// Handle MotionNotify events - process drag motion with snapping
-#[tracing::instrument(skip(ctx, persistent_state, eves))]
+#[tracing::instrument(skip(persistent_state, eves))]
 fn handle_motion_notify(
-    ctx: &AppContext,
     persistent_state: &PersistentState,
     eves: &mut HashMap<Window, Thumbnail>,
     event: MotionNotifyEvent,
@@ -279,29 +315,16 @@ fn handle_motion_notify(
     
     let snap_threshold = persistent_state.global.snap_threshold;
     
-    // Collect snap targets only for the dragging window
-    // Still need Vec here for snapping::find_snap_position API, but only when actually dragging
-    let others: Vec<_> = eves
-        .iter()
-        .filter(|(win, t)| **win != dragging_window && t.state.is_visible())
-        .filter_map(|(win, t)| {
-            ctx.conn.get_geometry(t.window).ok()
-                .and_then(|req| req.reply().ok())
-                .map(|geom| (*win, Rect {
-                    x: geom.x,
-                    y: geom.y,
-                    width: t.dimensions.width,
-                    height: t.dimensions.height,
-                }))
-        })
-        .collect();
-    
-    // Handle drag for the dragging thumbnail
+    // Get the dragging thumbnail and clone snap targets to avoid borrow conflict
+    // Snap targets were computed once in ButtonPress, avoiding repeated X11 queries
+    // Vec<Rect> clone is cheap since Rect is Copy (just copying some i16/u16 values)
     let thumbnail = eves.get_mut(&dragging_window).unwrap();
+    let snap_targets = thumbnail.input_state.snap_targets.clone();
+    
     handle_drag_motion(
         thumbnail,
         &event,
-        &others,
+        &snap_targets,  // Use cached data (cloned to avoid borrow conflict)
         thumbnail.dimensions.width,
         thumbnail.dimensions.height,
         snap_threshold,
@@ -315,7 +338,7 @@ fn handle_motion_notify(
 fn handle_drag_motion(
     thumbnail: &mut Thumbnail,
     event: &MotionNotifyEvent,
-    others: &[(Window, Rect)],
+    snap_targets: &[Rect],
     config_width: u16,
     config_height: u16,
     snap_threshold: u16,
@@ -338,7 +361,7 @@ fn handle_drag_motion(
 
     let Position { x: final_x, y: final_y } = snapping::find_snap_position(
         dragged_rect,
-        others,
+        snap_targets,
         snap_threshold,
     ).unwrap_or_else(|| Position::new(new_x, new_y));
 
@@ -367,7 +390,7 @@ pub fn handle_event<'a>(
         Event::FocusOut(event) => handle_focus_out(ctx, eves, event),
         Event::ButtonPress(event) => handle_button_press(ctx, eves, event, cycle_state),
         Event::ButtonRelease(event) => handle_button_release(ctx, persistent_state, eves, event, session_state),
-        Event::MotionNotify(event) => handle_motion_notify(ctx, persistent_state, eves, event),
+        Event::MotionNotify(event) => handle_motion_notify(persistent_state, eves, event),
         PropertyNotify(event) => {
             if event.atom == ctx.atoms.wm_name
                 && let Some(thumbnail) = eves.get_mut(&event.window)
@@ -388,7 +411,8 @@ pub fn handle_event<'a>(
                 // Update cycle state with new character name
                 cycle_state.update_character(event.window, new_character_name.to_string());
                 
-                // Ask persistent state what to do - pass current dimensions to ensure they're saved
+                // Handle character swap: updates position mapping in config and saves to disk
+                // Returns either preserved position (if configured) or current position
                 let new_position = persistent_state.handle_character_change(
                     &old_name,
                     &new_character_name,
@@ -411,13 +435,14 @@ pub fn handle_event<'a>(
             {
                 // New EVE window detected
                 
-                // Save initial position and dimensions for new character
-                // Query geometry to get actual position from X11
+                // Save initial position and dimensions for newly detected character
+                // (Happens when EVE window title changes from "EVE" to "EVE - CharacterName")
                 let geom = ctx.conn.get_geometry(thumbnail.window)
                     .context("Failed to query geometry for newly detected thumbnail")?
                     .reply()
                     .context("Failed to get geometry reply for newly detected thumbnail")?;
                 
+                // Save to disk when character name becomes known
                 persistent_state.update_position(
                     &thumbnail.character_name,
                     geom.x,

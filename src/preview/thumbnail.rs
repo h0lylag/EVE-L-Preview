@@ -17,12 +17,14 @@ use crate::types::{Dimensions, Position, ThumbnailState};
 use crate::x11_utils::{get_pictformat, to_fixed, AppContext};
 
 use super::font::FontRenderer;
+use super::snapping::Rect;
 
 #[derive(Debug, Default)]
 pub struct InputState {
     pub dragging: bool,
     pub drag_start: Position,
     pub win_start: Position,
+    pub snap_targets: Vec<Rect>,  // Cached snap targets computed when drag starts
 }
 
 #[derive(Debug)]
